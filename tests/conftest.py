@@ -13,6 +13,8 @@ from pal.app import create_app
 from pal.config import Settings, dsn
 from pal.migrate import migrate
 
+# Tests read PDFs with pypdf even where Docling is installed; tests/test_pdf.py covers Docling on its own.
+os.environ["PAL_PDF_ENGINE"] = "pypdf"
 TEST_DB = os.environ.get("PAL_TEST_DB", "pal_test")  # set per session when several test runs share the server
 PASSWORD = "correct horse battery staple"
 PUBLIC_HOST = "pc.example.ts.net"  # stands in for the Tailscale Serve name

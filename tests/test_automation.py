@@ -95,8 +95,8 @@ def test_rescan_leaves_documents_of_a_missing_folder_alone(db, tmp_path):
 
 def test_nul_bytes_from_extracted_text_are_dropped(db, monkeypatch):
     # pypdf can hand back text with NUL bytes, which Postgres text columns refuse.
-    monkeypatch.setattr(ingest, "parse", lambda name, data: (
-        "pdf", "Ti\x00tle", [{"heading": "H\x00", "page": 1, "content": "par\x00t one"}]))
+    monkeypatch.setattr(ingest, "parse_with_parser", lambda name, data: (
+        "pdf", "Ti\x00tle", [{"heading": "H\x00", "page": 1, "content": "par\x00t one"}], "pypdf-2"))
     doc, outcome = ingest.store(db, "scan.pdf", b"%PDF-fake")
     assert outcome == "added"
     assert doc["title"] == "Title"

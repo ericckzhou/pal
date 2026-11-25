@@ -14,7 +14,10 @@ QUERY_PREFIX = "search_query: "
 
 # (table, text expression, extra filter). Text is re-checked on write so an edit made mid-batch isn't overwritten.
 TARGETS = (
-    ("chunks", "coalesce(heading || E'\\n', '') || content", "true"),
+    # A chunk is embedded with its document's title and section path, so a passage that never names its subject
+    # ("Revenue grew 4%") still lands near questions about that document.
+    ("chunks", "(SELECT d.title FROM documents d WHERE d.id = document_id) || E'\\n' "
+               "|| coalesce(heading || E'\\n', '') || content", "true"),
     ("memories", "text", "true"),
     ("notes", "text", "true"),
     ("messages", "content", f"length(content) >= {MIN_MESSAGE_CHARS}"),

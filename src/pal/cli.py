@@ -1,4 +1,4 @@
-"""pal command line: serve, set-password, migrate, backup, backup-key, decrypt-backup, revoke-sessions, pair, devices, revoke-device."""
+"""pal command line: serve, set-password, migrate, backup, backup-key, decrypt-backup, revoke-sessions, pair, devices, revoke-device, ingest, pdf-models."""
 
 import argparse
 import getpass
@@ -44,6 +44,17 @@ def cmd_serve(settings: Settings) -> None:
         has_key = False
     egress.install(extra_hosts=(claude.API_HOST,) if has_key else ())
     uvicorn.run(create_app(settings), host=settings.host, port=settings.port, log_level="info", proxy_headers=False)
+
+
+def cmd_pdf_models() -> None:
+    """The one network step for Docling: fetch its models once. Converting PDFs afterwards is fully offline."""
+    try:
+        from .pdf import download_models
+
+        folder = download_models()
+    except ImportError as exc:
+        raise SystemExit("Docling isn't installed. Run: uv sync") from exc
+    print(f"Docling models saved to {folder}. Restart pal; PDFs from added folders are re-read on the next rescan.")
 
 
 def cmd_set_password(settings: Settings) -> None:
@@ -193,6 +204,7 @@ def main() -> None:
     rd.add_argument("device")
     ing = sub.add_parser("ingest", help="add a file or folder (PDF, Markdown, text); re-run to refresh changed files")
     ing.add_argument("path")
+    sub.add_parser("pdf-models", help="download Docling's layout/table/OCR models (one-time; better PDF reading)")
     args = parser.parse_args()
     settings = Settings()
 
@@ -223,6 +235,8 @@ def main() -> None:
         cmd_devices(settings)
     elif args.cmd == "revoke-device":
         cmd_revoke_device(settings, args.device)
+    elif args.cmd == "pdf-models":
+        cmd_pdf_models()
     elif args.cmd == "ingest":
         from pathlib import Path
 
