@@ -1,0 +1,27 @@
+# Personal data, backups and secrets must never be committed.
+.env
+.env.*
+*.dump
+*.sql.gz
+backups/
+data/
+secrets/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Node
+node_modules/
+dist/
+
+# Eval raw outputs (synthetic, but large)
+eval/results/
+
+# Tool caches and encrypted backups
+.coverage
+htmlcov/
+.ruff_cache/
+*.enc

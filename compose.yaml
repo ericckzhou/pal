@@ -1,0 +1,28 @@
+# PostgreSQL + pgvector for pal.
+# Start/stop with:  uv run scripts/db.py up | down
+# (the script supplies PAL_DB_PASSWORD from the Windows Credential Manager)
+
+name: pal
+
+services:
+  db:
+    image: pgvector/pgvector:0.8.1-pg18
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: pal
+      POSTGRES_DB: pal
+      POSTGRES_PASSWORD: ${PAL_DB_PASSWORD:?run via scripts/db.py so the password comes from the credential store}
+    ports:
+      # S1: published on loopback only; never 0.0.0.0
+      - "127.0.0.1:5432:5432"
+    volumes:
+      # Named volume lives inside Docker's own disk, never in this repo folder
+      - pal_pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pal -d pal"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  pal_pgdata:

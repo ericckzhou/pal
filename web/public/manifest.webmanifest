@@ -1,0 +1,11 @@
+{
+  "name": "pal",
+  "short_name": "pal",
+  "description": "Private, local-first personal assistant",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#02040d",
+  "theme_color": "#060a1f",
+  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}
