@@ -56,6 +56,19 @@ def clear_key() -> bool:
         return False
 
 
+def since_switch(past: list[dict]) -> list[dict]:
+    """The part of a chat Claude may see: everything after the last reply a local model wrote.
+
+    A chat switched to Claude midway keeps its earlier local turns on the PC, since those replies may quote
+    memories or documents. `past` rows carry `model`; the result has only role and content.
+    """
+    cut = 0
+    for i, m in enumerate(past):
+        if m["role"] == "assistant" and not is_claude(m.get("model")):
+            cut = i + 1
+    return [{"role": m["role"], "content": m["content"]} for m in past[cut:]]
+
+
 def to_claude(messages: list[dict]) -> tuple[str, list[dict]]:
     """Split pal's prompt into Claude's (system, messages): roles alternate and the first one is the user's."""
     system = "\n".join(m["content"] for m in messages if m["role"] == "system")
@@ -86,6 +99,10 @@ class ClaudeGateway:
         system, turns = to_claude(messages)
         if not turns:
             raise LLMError("nothing to send")
+        # Cache everything up to the newest turn, so the next message re-reads the history at the cached rate.
+        newest = turns[-1]
+        turns = turns[:-1] + [{"role": newest["role"], "content": [
+            {"type": "text", "text": newest["content"], "cache_control": {"type": "ephemeral"}}]}]
         body = {"model": model, "max_tokens": MAX_TOKENS, "system": system, "messages": turns, "stream": True}
         headers = {"x-api-key": self._key, "anthropic-version": API_VERSION, "content-type": "application/json"}
         try:
@@ -101,7 +118,10 @@ class ClaudeGateway:
                     if kind == "content_block_delta" and data.get("delta", {}).get("type") == "text_delta":
                         yield data["delta"].get("text", "")
                     elif kind == "message_start" and usage is not None:
-                        usage["prompt_tokens"] = data.get("message", {}).get("usage", {}).get("input_tokens")
+                        u = data.get("message", {}).get("usage", {})
+                        # Cached tokens are still prompt tokens; Analytics counts what the model read.
+                        usage["prompt_tokens"] = sum(u.get(k) or 0 for k in (
+                            "input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"))
                     elif kind == "message_delta" and usage is not None:
                         usage["completion_tokens"] = data.get("usage", {}).get("output_tokens")
                     elif kind == "error":

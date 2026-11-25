@@ -271,7 +271,8 @@ def post_message(conv_id: UUID, body: MessageBody, request: Request) -> Streamin
         return _command_reply(state, conv_id, body.content)
     with state.pool.connection() as conn:
         user_msg_id = conversations.add_message(conn, conv_id, "user", body.content)
-        past = conversations.history(conn, conv_id)
+        past = claude.since_switch(conversations.history(conn, conv_id, with_model=True)) if cloud \
+            else conversations.history(conn, conv_id)
         # Retrieve before saving a stated memory, so the reply isn't "about" the note it was just given.
         if cloud:
             items = []  # Claude gets only this chat's own text: no memories, documents, notes or project card

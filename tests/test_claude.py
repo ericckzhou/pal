@@ -44,7 +44,8 @@ def test_streams_text_and_usage_and_sends_the_right_request():
     assert seen["headers"]["anthropic-version"] == claude.API_VERSION
     body = seen["body"]
     assert (body["model"], body["system"], body["stream"]) == ("claude-sonnet-5-5", "be brief", True)
-    assert body["messages"] == [{"role": "user", "content": "hi"}]
+    assert body["messages"] == [
+        {"role": "user", "content": [{"type": "text", "text": "hi", "cache_control": {"type": "ephemeral"}}]}]
 
 
 def test_bad_key_and_stream_errors_become_llm_errors():
@@ -173,3 +174,47 @@ def test_model_command_switches_to_claude_with_a_warning(authed):
     reply = "".join(e.get("text", "") for e in events)
     assert _model_of(authed, conv) == "claude-sonnet-5-5"
     assert "Anthropic" in reply
+
+
+# ---------- switching mid-chat: earlier local turns stay on the PC ----------
+
+def test_switching_to_claude_sends_only_messages_after_the_switch(authed, llm):
+    fake = FakeClaude()
+    authed.app.state.claude = fake
+    conv = authed.post("/api/conversations").json()["id"]
+    llm.reply = ["Your locker code is 4471."]  # a local reply that quoted a memory
+    _send(authed, conv, "what's my locker code?")
+    _send(authed, conv, "/model sonnet")
+    _send(authed, conv, "write a haiku about tea")
+    sent = json.dumps(fake.calls[-1])
+    assert "4471" not in sent and "locker" not in sent
+    assert "haiku about tea" in sent
+
+    _send(authed, conv, "another one")  # later Claude turns keep the Claude part of the chat
+    sent = json.dumps(fake.calls[-1])
+    assert "haiku about tea" in sent and "from claude" in sent and "4471" not in sent
+
+
+# ---------- prompt caching ----------
+
+def test_request_marks_the_history_for_caching_and_counts_cached_tokens():
+    seen = {}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        seen["body"] = json.loads(req.content)
+        return httpx.Response(200, content=_sse(
+            {"type": "message_start", "message": {"usage": {
+                "input_tokens": 10, "cache_read_input_tokens": 900, "cache_creation_input_tokens": 50}}},
+            {"type": "content_block_delta", "delta": {"type": "text_delta", "text": "ok"}},
+            {"type": "message_delta", "usage": {"output_tokens": 1}},
+            {"type": "message_stop"},
+        ))
+
+    usage: dict = {}
+    prompt = [{"role": "system", "content": "S"}, {"role": "user", "content": "a"},
+              {"role": "assistant", "content": "b"}, {"role": "user", "content": "c"}]
+    list(_gateway(handler).stream_chat(prompt, "claude-sonnet-5-5", usage))
+    last = seen["body"]["messages"][-1]["content"]
+    assert last == [{"type": "text", "text": "c", "cache_control": {"type": "ephemeral"}}]
+    assert seen["body"]["messages"][0]["content"] == "a"  # only the newest turn carries the marker
+    assert usage == {"prompt_tokens": 960, "completion_tokens": 1}

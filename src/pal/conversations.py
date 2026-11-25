@@ -75,11 +75,12 @@ def add_message(
     return msg_id
 
 
-def history(conn: psycopg.Connection, conv_id: UUID) -> list[dict]:
+def history(conn: psycopg.Connection, conv_id: UUID, with_model: bool = False) -> list[dict]:
     """What the model sees. Slash commands and their replies are left out: the model would imitate them."""
+    cols = "role, content, model" if with_model else "role, content"
     return _rows(
         conn,
-        r"""SELECT role, content FROM messages WHERE conversation_id = %s
+        rf"""SELECT {cols} FROM messages WHERE conversation_id = %s
               AND model IS DISTINCT FROM %s AND NOT (role = 'user' AND content ~ '^\s*/[A-Za-z]+(\s|$)')
             ORDER BY created_at, id""",
         (conv_id, COMMAND_MODEL),
