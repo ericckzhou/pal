@@ -187,13 +187,15 @@ def _no_nul(text: str | None) -> str | None:
 
 def store(
     conn: psycopg.Connection, filename: str, data: bytes, source_path: str | None = None, folder: str | None = None,
-    project_id: UUID | None = None,
+    project_id: UUID | None = None, reread: bool = False,
 ) -> tuple[dict, str]:
     """Insert or refresh a document. Returns (document, outcome) with outcome added|updated|unchanged.
 
     `folder` is the folder the owner added (for grouping); re-adding a folder claims files already stored.
     `project_id`, when given, tags the document (new or already stored); otherwise a new file in a tagged folder
     takes the folder's project.
+    `reread` re-extracts an unchanged file that an older extractor read. Only the owner-started job (reread.py)
+    sets it: re-reading is slow, so adds and rescans never do it implicitly.
     """
     digest = hashlib.sha256(data).digest()
     with conn.cursor(row_factory=dict_row) as cur:
@@ -203,8 +205,8 @@ def store(
             existing = cur.execute(
                 "SELECT id, sha256, kind, parser FROM documents WHERE source_path IS NULL AND sha256 = %s", (digest,)
             ).fetchone()
-        fresh = existing and existing["parser"] == parser_for(existing["kind"])
-        if existing and bytes(existing["sha256"]) == digest and fresh:
+        stale = reread and existing and existing["parser"] != parser_for(existing["kind"])
+        if existing and bytes(existing["sha256"]) == digest and not stale:
             if folder:
                 cur.execute("UPDATE documents SET folder = %s WHERE id = %s AND folder IS DISTINCT FROM %s",
                             (folder, existing["id"], folder))
@@ -281,8 +283,9 @@ def _store_file(conn: psycopg.Connection, f: Path, folder: str | None, project_i
 def rescan_folders(conn: psycopg.Connection) -> dict:
     """Refresh every folder the owner added: new files are added, changed files re-read.
 
-    A file pal already has is only read again when it was modified after pal stored it, or when pal now reads that
-    kind of file differently (a PDF stored before Docling was set up), so a quiet folder costs a directory walk. Files deleted from disk, and folders that are gone (an unplugged drive), are left
+    A file pal already has is only read again when it was modified after pal stored it, so a quiet folder costs a
+    directory walk. PDFs read by an older extractor are NOT re-read here: that's slow, so the owner starts it
+    (reread.py, from the Documents page). Files deleted from disk, and folders that are gone (an unplugged drive), are left
     in pal; removing them stays the owner's choice on the Documents page.
     """
     summary: dict = {"added": 0, "updated": 0, "unchanged": 0, "skipped": [], "missing": []}
@@ -293,9 +296,8 @@ def rescan_folders(conn: psycopg.Connection) -> dict:
         if not root.is_dir():
             summary["missing"].append(folder)
             continue
-        stored = {path: (at, kind, parser) for path, at, kind, parser in conn.execute(
-            "SELECT source_path, updated_at, kind, parser FROM documents WHERE folder = %s AND source_path IS NOT NULL",
-            (folder,),
+        stored = {path: (at,) for path, at in conn.execute(
+            "SELECT source_path, updated_at FROM documents WHERE folder = %s AND source_path IS NOT NULL", (folder,)
         ).fetchall()}
         try:
             files = _walk(root)
@@ -306,7 +308,7 @@ def rescan_folders(conn: psycopg.Connection) -> dict:
             path = str(f.resolve())
             try:
                 seen = stored.get(path)
-                if seen is not None and f.stat().st_mtime <= seen[0].timestamp() and seen[2] == parser_for(seen[1]):
+                if seen is not None and f.stat().st_mtime <= seen[0].timestamp():
                     summary["unchanged"] += 1
                     continue
             except OSError as exc:

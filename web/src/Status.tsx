@@ -121,7 +121,16 @@ export default function Status({ onOpenConversation, onView, onStatus, onAuthErr
         <Tile
           label="Documents"
           value={num(c.documents)}
-          sub={c.embed_backlog ? `${num(c.embed_backlog)} passages still indexing` : "all indexed"}
+          sub={
+            c.reread.running
+              ? `Re-reading PDFs ${c.reread.done}/${c.reread.total}`
+              : c.embed_backlog
+                ? `${num(c.embed_backlog)} passages still indexing`
+                : c.stale_pdfs
+                  ? `${c.stale_pdfs} PDFs can be re-read · open to decide`
+                  : "all indexed"
+          }
+          state={c.reread.running || c.embed_backlog ? "warn" : undefined}
           onClick={() => onView("documents")}
         />
         <Tile label="Open tasks" value={num(c.open_tasks)} onClick={() => onView("tasks")} />

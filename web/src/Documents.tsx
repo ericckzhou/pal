@@ -1,5 +1,6 @@
 import { ChangeEvent, FormEvent, useCallback, useEffect, useState } from "react";
 import { api, Doc, Project } from "./api";
+import DocProcessing from "./DocProcessing";
 import ProjectSelect, { useProjects } from "./ProjectSelect";
 
 type Props = { embedded?: boolean; projectId?: string | null; onAuthError: (err: unknown) => void };
@@ -141,6 +142,7 @@ export default function Documents({ embedded = false, projectId = null, onAuthEr
       </form>
       {status && <p className="notice small">{status}</p>}
       {error && <p className="error small pre">{error}</p>}
+      {!embedded && <DocProcessing onProgress={load} onAuthError={onAuthError} />}
 
       <ul className="memory-list">
         {folderList.length + loose.length === 0 && <li className="muted">{projectId ? "No documents in this project." : "No documents yet."}</li>}

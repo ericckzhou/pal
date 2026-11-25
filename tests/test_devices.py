@@ -191,6 +191,8 @@ def test_s3_devices_cannot_administer_devices_even_with_forged_tailscale_headers
     assert remote.post("/api/devices/pairing", json={"name": "Evil"}, headers=forged).status_code == 403
     assert remote.post(f"/api/devices/{paired[1]}/revoke").status_code == 403
     assert remote.post("/api/documents/folder", json={"path": "C:\\"}).status_code == 403
+    assert remote.post("/api/documents/reread").status_code == 403  # re-reading opens files on the PC
+    assert remote.get("/api/documents/processing").json()["can_reread"] is False
 
 
 def test_s2_password_login_only_at_the_pc(authed, remote):

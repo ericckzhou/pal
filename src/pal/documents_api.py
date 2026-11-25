@@ -5,7 +5,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
-from . import ingest
+from . import ingest, pdf, reread
 from .api import require_owner, require_session
 from .work_api import _check_project
 
@@ -34,6 +34,42 @@ def list_documents(request: Request) -> list[dict]:
         return ingest.list_documents(conn)
 
 
+def processing_state(conn) -> dict:
+    """What pal is doing (or offering to do) with documents in the background, for the Documents and Status pages."""
+    pending, total = conn.execute(
+        "SELECT count(*) FILTER (WHERE embedding IS NULL), count(*) FROM chunks").fetchone()
+    return {
+        "pdf_reader": "docling" if pdf.docling_ready() else "pypdf",
+        "indexing": {"pending": pending, "total": total},
+        "stale_pdfs": reread.stale(conn),
+        "reread": reread.snapshot(),
+    }
+
+
+@router.get("/documents/processing")
+def processing(request: Request, session=Depends(require_session)) -> dict:
+    with request.app.state.pool.connection() as conn:
+        # Re-reading opens files on this PC, so (like adding folders) only the PC may start it.
+        return {**processing_state(conn), "can_reread": session.is_owner_pc}
+
+
+@router.post("/documents/reread", dependencies=[Depends(require_owner)])
+def start_reread(request: Request) -> dict:
+    """Owner-started: re-read PDFs from this PC that an older PDF reader read. Slow; shows progress; can be stopped."""
+    try:
+        return reread.start(request.app.state.pool)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/documents/reread/stop", dependencies=[Depends(require_owner)])
+def stop_reread() -> dict:
+    """Stops after the file being read now; files already re-read keep their new text."""
+    return reread.stop()
+
+
 @router.post("/documents/upload", status_code=201)
 async def upload(request: Request, filename: str, project_id: UUID | None = None) -> dict:
     """Raw file bytes in the body; the name in ?filename= (avoids a multipart parser dependency)."""
@@ -53,7 +89,8 @@ async def upload(request: Request, filename: str, project_id: UUID | None = None
 
     def save() -> dict:
         with request.app.state.pool.connection() as conn:
-            doc, outcome = ingest.store(conn, filename, bytes(data), project_id=project_id)
+            # An upload is an explicit, single-file request, so an unchanged PDF is re-read if an older reader read it.
+            doc, outcome = ingest.store(conn, filename, bytes(data), project_id=project_id, reread=True)
         return {"document": doc, "outcome": outcome}
 
     try:

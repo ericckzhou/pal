@@ -17,7 +17,7 @@ from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field, field_validator
 from psycopg.rows import dict_row
 
-from . import auth, claude, encryption, logbuffer, reminders, settings_store
+from . import auth, claude, encryption, logbuffer, reminders, reread, settings_store
 from .api import require_owner, require_session
 from .backup import backup_files
 from .config import Settings
@@ -177,6 +177,8 @@ def status(request: Request, session: auth.Session = Depends(require_session)) -
             (SELECT COALESCE(sum(COALESCE(prompt_tokens, 0) + COALESCE(completion_tokens, 0)), 0)
                FROM messages WHERE created_at > now() - interval '24 hours') AS tokens_24h""")[0]
         recent = list_sessions(conn, limit=20)
+        counts["stale_pdfs"] = reread.stale(conn)["files"]
+        counts["reread"] = reread.snapshot()
         acked = conn.execute("SELECT 1 FROM app_settings WHERE key = %s", (encryption.ACK_KEY,)).fetchone() is not None
     enc = encryption.current()
     backups = _backups(settings)

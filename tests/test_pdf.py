@@ -136,32 +136,88 @@ def test_pypdf_is_forced_by_env(monkeypatch):
 
 # ---------- re-reading PDFs stored by an older parser ----------
 
-def test_unchanged_pdf_is_reread_when_the_parser_changes(db, monkeypatch):
-    data = make_pdf([["Quarterly numbers"]])
-    _, outcome = ingest.store(db, "q.pdf", data)
-    assert outcome == "added"
-    assert ingest.store(db, "q.pdf", data)[1] == "unchanged"
-
-    monkeypatch.setattr(ingest, "parser_for", lambda kind: pdf.PARSER_DOCLING if kind == "pdf" else ingest.TEXT_PARSER)
-    monkeypatch.setattr(pdf, "extract", lambda name, d: ("Q", [{"heading": "Numbers", "page": 1, "text": "x"}],
-                                                          pdf.PARSER_DOCLING))
-    assert ingest.store(db, "q.pdf", data)[1] == "updated"
-    assert db.execute("SELECT parser FROM documents").fetchone()[0] == pdf.PARSER_DOCLING
-    assert db.execute("SELECT heading FROM chunks").fetchone()[0] == "Numbers"
-
-
-def test_rescan_rereads_old_pdfs_even_if_not_modified(db, tmp_path, monkeypatch):
+def _old_pdf(db, tmp_path):
+    """A PDF from a folder, stored (by pypdf) before pal gained Docling."""
     f = tmp_path / "old.pdf"
     f.write_bytes(make_pdf([["Old extraction"]]))
     t = time.time() - 3600
     os.utime(f, (t, t))
     ingest.ingest_path(db, str(tmp_path))
-    assert ingest.rescan_folders(db)["unchanged"] == 1
+    return f
 
-    monkeypatch.setattr(ingest, "parser_for", lambda kind: pdf.PARSER_DOCLING if kind == "pdf" else ingest.TEXT_PARSER)
-    monkeypatch.setattr(pdf, "extract", lambda name, d: (None, [{"heading": None, "page": 1, "text": "new"}],
+
+def test_rescan_and_readd_leave_old_pdfs_alone(db, tmp_path, monkeypatch):
+    f = _old_pdf(db, tmp_path)
+    monkeypatch.setattr(pdf, "current_parser", lambda: pdf.PARSER_DOCLING)
+    monkeypatch.setattr(pdf, "extract", lambda *a: pytest.fail("re-read without the owner asking"))
+    assert ingest.rescan_folders(db)["unchanged"] == 1
+    assert ingest.ingest_path(db, str(tmp_path))["unchanged"] == 1  # the Rescan button
+    assert ingest.store(db, f.name, f.read_bytes(), str(f.resolve()))[1] == "unchanged"
+
+
+def test_owner_starts_reread_and_sees_progress(authed, db, tmp_path, monkeypatch):
+    _old_pdf(db, tmp_path)
+    before = authed.get("/api/documents/processing").json()
+    assert before["stale_pdfs"]["files"] == 0  # pypdf is still the current reader in tests
+
+    monkeypatch.setattr(pdf, "current_parser", lambda: pdf.PARSER_DOCLING)
+    monkeypatch.setattr(pdf, "extract", lambda name, d: ("Q", [{"heading": "Numbers", "page": 1, "text": "new text"}],
                                                           pdf.PARSER_DOCLING))
-    assert ingest.rescan_folders(db)["updated"] == 1
+    state = authed.get("/api/documents/processing").json()
+    assert state["can_reread"] is True
+    assert state["stale_pdfs"]["files"] == 1 and state["reread"]["running"] is False
+    assert authed.get("/api/status").json()["counts"]["stale_pdfs"] == 1
+
+    job = authed.post("/api/documents/reread").json()
+    assert job["total"] == 1
+    for _ in range(100):
+        job = authed.get("/api/documents/processing").json()["reread"]
+        if not job["running"]:
+            break
+        time.sleep(0.05)
+    assert (job["done"], job["failed"], job["stopped"]) == (1, [], False)
+    assert db.execute("SELECT parser FROM documents").fetchone()[0] == pdf.PARSER_DOCLING
+    assert db.execute("SELECT heading FROM chunks").fetchone()[0] == "Numbers"
+    assert authed.post("/api/documents/reread").status_code == 404  # nothing left to do
+
+
+def test_reread_can_be_stopped(db, tmp_path, monkeypatch, settings):
+    from psycopg_pool import ConnectionPool
+
+    from pal import reread
+    from pal.config import dsn
+
+    for name in ("a.pdf", "b.pdf", "c.pdf"):
+        (tmp_path / name).write_bytes(make_pdf([[f"text of {name}"]]))
+    ingest.ingest_path(db, str(tmp_path))
+    monkeypatch.setattr(pdf, "current_parser", lambda: pdf.PARSER_DOCLING)
+
+    def slow(name, d):
+        reread.stop()  # the owner presses Stop while the first file is being read
+        return None, [{"heading": None, "page": 1, "text": "new"}], pdf.PARSER_DOCLING
+
+    monkeypatch.setattr(pdf, "extract", slow)
+    with ConnectionPool(dsn(settings), min_size=1, max_size=2, kwargs={"autocommit": True}) as pool:
+        reread.start(pool)
+        for _ in range(100):
+            if not reread.snapshot()["running"]:
+                break
+            time.sleep(0.05)
+    job = reread.snapshot()
+    assert (job["done"], job["total"], job["stopped"]) == (1, 3, True)
+    assert db.execute("SELECT count(*) FROM documents WHERE parser = %s", (pdf.PARSER_DOCLING,)).fetchone()[0] == 1
+
+
+def test_reuploading_an_old_pdf_rereads_it(authed, db, monkeypatch):
+    data = make_pdf([["Quarterly numbers"]])
+    upload = lambda: authed.post("/api/documents/upload?filename=q.pdf", content=data,
+                                 headers={"Content-Type": "application/octet-stream"}).json()["outcome"]
+    assert upload() == "added"
+    assert upload() == "unchanged"
+    monkeypatch.setattr(pdf, "current_parser", lambda: pdf.PARSER_DOCLING)
+    monkeypatch.setattr(pdf, "extract", lambda name, d: ("Q", [{"heading": "Numbers", "page": 1, "text": "x"}],
+                                                          pdf.PARSER_DOCLING))
+    assert upload() == "updated"
 
 
 # ---------- embedding ----------
@@ -182,7 +238,7 @@ def test_real_docling_reads_headings_and_pages():
     pytest.importorskip("docling")
     if not (pdf.models_dir().is_dir() and any(pdf.models_dir().iterdir())):
         pytest.skip("Docling models not downloaded (pal pdf-models)")
-    title, blocks = pdf._docling("r.pdf", make_pdf(report_pages(3)))
+    _, blocks = pdf._docling("r.pdf", make_pdf(report_pages(3)))
     text = " ".join(b["text"] for b in blocks)
     assert "topic1" in text and "topic3" in text
     assert "ACME Corp" not in text and "Page 2 of 3" not in text  # page furniture is left out

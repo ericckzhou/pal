@@ -217,6 +217,8 @@ export type Status = {
     inbox: number;
     documents: number;
     embed_backlog: number;
+    stale_pdfs: number;
+    reread: RereadJob;
     open_tasks: number;
     reminders: number;
     next_reminder: string | null;
@@ -290,6 +292,24 @@ async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
   return resp.status === 204 ? (undefined as T) : resp.json();
 }
 
+export type RereadJob = {
+  running: boolean;
+  total?: number;
+  done?: number;
+  current?: string | null;
+  failed?: { path: string; reason: string }[];
+  stopped?: boolean;
+  started_at?: string;
+  finished_at?: string | null;
+};
+export type DocProcessing = {
+  pdf_reader: "docling" | "pypdf";
+  indexing: { pending: number; total: number };
+  stale_pdfs: { files: number; bytes: number; uploads: number; parser: string };
+  reread: RereadJob;
+  can_reread: boolean;
+};
+
 export const api = {
   attention: () => call<Attention>("/api/attention"),
   stillOnIt: (taskId: string) => call(`/api/tasks/${taskId}/still-on-it`, { method: "POST" }),
@@ -328,6 +348,9 @@ export const api = {
   suggestMemories: (convId: string) =>
     call<{ proposed: Memory[] }>(`/api/conversations/${convId}/suggest-memories`, { method: "POST" }),
   documents: () => call<Doc[]>("/api/documents"),
+  docProcessing: () => call<DocProcessing>("/api/documents/processing"),
+  startReread: () => call<RereadJob>("/api/documents/reread", { method: "POST" }),
+  stopReread: () => call<RereadJob>("/api/documents/reread/stop", { method: "POST" }),
   uploadDocument: (file: File, projectId: string | null = null) =>
     call<{ document: Doc; outcome: string }>(
       `/api/documents/upload?filename=${encodeURIComponent(file.name)}${projectId ? `&project_id=${projectId}` : ""}`,
