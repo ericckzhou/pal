@@ -1,0 +1,62 @@
+name: Bug report
+description: Something in pal doesn't work as expected
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. **Please remove anything personal** (names, file paths, conversation text, tailnet names) from what you paste below.
+        For a security problem, don't use this form; see [SECURITY.md](https://github.com/ericckzhou/pal/blob/main/SECURITY.md).
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open …
+        2. Click …
+        3. See …
+    validations:
+      required: true
+  - type: dropdown
+    id: setup
+    attributes:
+      label: How do you run pal?
+      options:
+        - Windows (uv run pal serve)
+        - Docker (Linux or Mac)
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Commit
+      description: Output of `git rev-parse --short HEAD`
+      placeholder: 5d55dff
+  - type: input
+    id: model
+    attributes:
+      label: Model
+      description: The chat model in use, if it matters
+      placeholder: qwen3.5:4b
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where did it happen?
+      options:
+        - On the PC
+        - From a paired device over Tailscale
+        - Command line
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Relevant lines from the Logs page or `%LOCALAPPDATA%\pal\logs\pal.log`, with personal details removed.
+      render: text

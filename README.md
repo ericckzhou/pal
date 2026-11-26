@@ -242,6 +242,10 @@ uv run python eval/retrieval_eval.py --write   # measure search quality with the
 
 </details>
 
+## Contributing
+
+Bug reports and pull requests are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md). Please report security problems privately, as described in [SECURITY.md](SECURITY.md).
+
 ## License
 
 [MIT](LICENSE)
