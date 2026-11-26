@@ -1,5 +1,5 @@
 import { KeyboardEvent, useEffect, useRef, useState } from "react";
-import { api, isClaude, Message, Project, Proposal, Step, streamReply } from "./api";
+import { api, isClaude, Message, Project, Proposal, Step, streamReply, THINKING_LEVELS, ThinkingLevel } from "./api";
 import { num } from "./format";
 import { Icon } from "./Icon";
 import { Markdown } from "./Markdown";
@@ -36,6 +36,16 @@ function StepCards({ steps }: { steps: Step[] }) {
   );
 }
 
+function Reasoning({ text, live }: { text: string; live: boolean }) {
+  // Open while the model is still reasoning; folds away once the reply starts. Not kept after a reload.
+  return (
+    <details className="reasoning small" open={live}>
+      <summary>{live ? "Thinking…" : "Thought it through"}</summary>
+      <div className="reasoning-text">{text}</div>
+    </details>
+  );
+}
+
 function ReplyMeta({ m }: { m: Message }) {
   if (!m.model || m.model === "command") return null;
   const tokens = (m.prompt_tokens ?? 0) + (m.completion_tokens ?? 0);
@@ -62,6 +72,7 @@ export default function Chat({
   const [notice, setNotice] = useState("");
   const [suggesting, setSuggesting] = useState(false);
   const [model, setModel] = useState<string | null>(null);
+  const [thinking, setThinking] = useState<ThinkingLevel | null>(null);
   const idRef = useRef<string | null>(convId);
   const endRef = useRef<HTMLDivElement>(null);
 
@@ -76,8 +87,12 @@ export default function Chat({
 
   // The rail can switch this chat's model, so re-read it whenever the chat list changes.
   useEffect(() => {
-    if (convId) api.get(convId).then((c) => setModel(c.model ?? null)).catch(onAuthError);
-    else setModel(newChatModel);
+    if (convId)
+      api.get(convId).then((c) => { setModel(c.model ?? null); setThinking(c.thinking ?? null); }).catch(onAuthError);
+    else {
+      setModel(newChatModel);
+      setThinking(null);
+    }
   }, [convId, listVersion, newChatModel, onAuthError]);
 
   useEffect(() => {
@@ -97,7 +112,8 @@ export default function Chat({
   const ensureConversation = async () => {
     if (!idRef.current) {
       const id = (await api.create()).id;
-      if (newChatModel) await api.patchConversation(id, { model: newChatModel });
+      if (newChatModel || thinking)
+        await api.patchConversation(id, { ...(newChatModel ? { model: newChatModel } : {}), ...(thinking ? { thinking } : {}) });
       idRef.current = id;
     }
     return idRef.current;
@@ -129,6 +145,10 @@ export default function Chat({
           setNotice(`Saved to memory: “${ev.memory.text}”`);
         } else if (ev.type === "sources") {
           setMessages((m) => [...m.slice(0, -1), { ...m[m.length - 1], sources: ev.sources }]);
+        } else if (ev.type === "thinking") {
+          setMessages((m) => [...m.slice(0, -1), { ...m[m.length - 1], thinking: (m[m.length - 1].thinking ?? "") + ev.text }]);
+        } else if (ev.type === "thinking_changed") {
+          setThinking(ev.thinking);
         } else if (ev.type === "token") {
           setMessages((m) => [...m.slice(0, -1), { ...m[m.length - 1], content: m[m.length - 1].content + ev.text }]);
         } else if (ev.type === "proposal") {
@@ -169,6 +189,18 @@ export default function Chat({
     } catch (err) {
       onAuthError(err);
       setError("Could not change the project.");
+    }
+  };
+
+  const changeThinking = async (value: string) => {
+    const level = (value || null) as ThinkingLevel | null;
+    setThinking(level);
+    if (!idRef.current) return; // a new chat applies it when it's created
+    try {
+      await api.patchConversation(idRef.current, { thinking: level });
+    } catch (err) {
+      onAuthError(err);
+      setError("Could not change the thinking level.");
     }
   };
 
@@ -214,6 +246,15 @@ export default function Chat({
             </select>
           </label>
         )}
+        <label className="thinking-pick" title="How much the model reasons before replying (/think)">
+          Thinking{" "}
+          <select value={thinking ?? ""} onChange={(e) => changeThinking(e.target.value)} aria-label="Thinking level">
+            <option value="">Default</option>
+            {THINKING_LEVELS.map((l) => (
+              <option key={l} value={l}>{l}</option>
+            ))}
+          </select>
+        </label>
         <span className="model-chip" title="Switch with /model name, or in the chat list">
           <Icon name="terminal" size={12} /> {model ?? "default model"}
         </span>
@@ -239,6 +280,7 @@ export default function Chat({
             ) : (
               <>
                 {m.steps?.length ? <StepCards steps={m.steps} /> : null}
+                {m.thinking ? <Reasoning text={m.thinking} live={!m.content} /> : null}
                 {m.content ? (
                   <>
                     <Markdown text={m.content} cites={new Set(m.sources?.map((s) => s.handle))} anchor={`${i}-`} />

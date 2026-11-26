@@ -88,7 +88,7 @@ class FakeClaude:
     def __init__(self) -> None:
         self.calls: list[list[dict]] = []
 
-    def stream_chat(self, messages, model, usage=None) -> Iterator[str]:
+    def stream_chat(self, messages, model, usage=None, thinking="off") -> Iterator[str]:
         self.calls.append(messages)
         yield "from claude"
         if usage is not None:

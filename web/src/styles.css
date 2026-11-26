@@ -529,3 +529,9 @@ button.board-card-title { display: block; width: 100%; text-align: left; border:
 .proc-row > span { flex: 1 1 22rem; min-width: 0; }
 .proc-row progress { flex: 1 1 10rem; max-width: 100%; height: 0.55rem; accent-color: var(--accent); }
 .proc-failed { margin: 0; padding-left: 1.1rem; max-height: 10rem; overflow: auto; overflow-wrap: anywhere; }
+
+.thinking-pick { margin-left: auto; }
+.thinking-pick + .model-chip { margin-left: 0.5rem; }
+.reasoning { margin: 0.25rem 0 0.5rem; border-left: 2px solid var(--line); padding-left: 0.6rem; }
+.reasoning summary { cursor: pointer; color: var(--muted); font-style: italic; }
+.reasoning-text { white-space: pre-wrap; color: var(--muted); max-height: 18rem; overflow-y: auto; margin-top: 0.3rem; }

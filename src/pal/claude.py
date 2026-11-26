@@ -11,6 +11,7 @@ from collections.abc import Iterator
 import httpx
 
 from .llm import LLMError
+from .thinking import Thought, claude_params
 
 API_HOST = "api.anthropic.com"
 API_URL = f"https://{API_HOST}/v1/messages"
@@ -93,7 +94,9 @@ class ClaudeGateway:
         self.allowed = frozenset(MODELS)
         self._client = client or httpx.Client(timeout=httpx.Timeout(15.0, read=300.0))
 
-    def stream_chat(self, messages: list[dict], model: str, usage: dict | None = None) -> Iterator[str]:
+    def stream_chat(
+        self, messages: list[dict], model: str, usage: dict | None = None, thinking: str = "off"
+    ) -> Iterator[str]:
         if model not in self.allowed:
             raise LLMError(f"model {model!r} is not an allowed Claude model")
         system, turns = to_claude(messages)
@@ -103,7 +106,8 @@ class ClaudeGateway:
         newest = turns[-1]
         turns = turns[:-1] + [{"role": newest["role"], "content": [
             {"type": "text", "text": newest["content"], "cache_control": {"type": "ephemeral"}}]}]
-        body = {"model": model, "max_tokens": MAX_TOKENS, "system": system, "messages": turns, "stream": True}
+        body = {"model": model, "max_tokens": MAX_TOKENS, "system": system, "messages": turns, "stream": True,
+                **claude_params(thinking)}
         headers = {"x-api-key": self._key, "anthropic-version": API_VERSION, "content-type": "application/json"}
         try:
             with self._client.stream("POST", API_URL, json=body, headers=headers) as resp:
@@ -115,8 +119,11 @@ class ClaudeGateway:
                         continue
                     data = json.loads(line[5:].strip() or "{}")
                     kind = data.get("type")
-                    if kind == "content_block_delta" and data.get("delta", {}).get("type") == "text_delta":
-                        yield data["delta"].get("text", "")
+                    delta = data.get("delta", {}) if kind == "content_block_delta" else {}
+                    if delta.get("type") == "text_delta":
+                        yield delta.get("text", "")
+                    elif delta.get("type") == "thinking_delta" and delta.get("thinking"):
+                        yield Thought(delta["thinking"])
                     elif kind == "message_start" and usage is not None:
                         u = data.get("message", {}).get("usage", {})
                         # Cached tokens are still prompt tokens; Analytics counts what the model read.

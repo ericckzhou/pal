@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 
-from . import actions, auth, claude, conversations, model_cmd, devices, memory, reminders, retrieval, work
+from . import actions, auth, claude, conversations, model_cmd, devices, memory, reminders, retrieval, thinking, work
 from .context import build_messages
 from .llm import LLMError
 
@@ -209,6 +209,9 @@ def _command_reply(state, conv_id: UUID, content: str) -> StreamingResponse:
             result = model_cmd.run(conn, conv_id, arg, sorted(getattr(state.llm, "allowed", {state.llm.model})),
                                    state.settings.chat_model, getattr(state, "claude", None) is not None)
             result["changed"] = False
+        elif cmd.lower() == "/think":
+            result = thinking.run(conn, conv_id, arg, state.settings.thinking)
+            result["changed"] = False
         else:
             result = actions.run_command(conn, conv_id, content)
         step = {"kind": "command", "label": f"Ran {content.split()[0]}", "detail": None}
@@ -222,6 +225,8 @@ def _command_reply(state, conv_id: UUID, content: str) -> StreamingResponse:
             yield _event(type="work_changed")
         if result.get("model_changed"):
             yield _event(type="model_changed", model=result["model"])
+        if result.get("thinking_changed"):
+            yield _event(type="thinking_changed", thinking=result["thinking"])
         yield _event(type="token", text=result["reply"])
         yield _event(type="done", message_id=msg_id)
 
@@ -267,6 +272,7 @@ def post_message(conv_id: UUID, body: MessageBody, request: Request) -> Streamin
     else:
         model = chosen if chosen and chosen in getattr(state.llm, "allowed", {chosen}) else state.llm.model
         gateway = state.llm
+    level = thinking.resolve(conv.get("thinking"), state.settings.thinking)
     if actions.is_command(body.content):
         return _command_reply(state, conv_id, body.content)
     with state.pool.connection() as conn:
@@ -312,7 +318,10 @@ def post_message(conv_id: UUID, body: MessageBody, request: Request) -> Streamin
         if sources:
             yield _event(type="sources", sources=sources)
         try:
-            for text in gateway.stream_chat(prompt, model=model, usage=usage):
+            for text in gateway.stream_chat(prompt, model=model, usage=usage, thinking=level):
+                if isinstance(text, thinking.Thought):  # shown live, never stored
+                    yield _event(type="thinking", text=str(text))
+                    continue
                 parts.append(text)
                 yield _event(type="token", text=text)
         except Exception as exc:

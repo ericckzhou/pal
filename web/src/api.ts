@@ -4,8 +4,11 @@ export type Conversation = {
   updated_at: string;
   project_id?: string | null;
   model?: string | null;
+  thinking?: ThinkingLevel | null;
   message_count?: number;
 };
+export const THINKING_LEVELS = ["off", "low", "medium", "high"] as const;
+export type ThinkingLevel = (typeof THINKING_LEVELS)[number];
 export type Source = {
   handle: string;
   kind: "memory" | "document" | "conversation" | "note" | "project";
@@ -27,6 +30,7 @@ export type Message = {
   sources?: Source[] | null;
   steps?: Step[] | null;
   model?: string | null;
+  thinking?: string; // reasoning shown while the reply streams; never stored
   prompt_tokens?: number | null;
   completion_tokens?: number | null;
   created_at?: string;
@@ -61,6 +65,8 @@ export type Memory = {
 export type MemoryPatch = Partial<Pick<Memory, "text" | "kind" | "pinned" | "project_id">>;
 export type StreamEvent =
   | { type: "token"; text: string }
+  | { type: "thinking"; text: string }
+  | { type: "thinking_changed"; thinking: ThinkingLevel | null }
   | { type: "memory_saved"; memory: Memory }
   | { type: "sources"; sources: Source[] }
   | { type: "done"; message_id: string; model?: string; usage?: Usage }
@@ -256,11 +262,12 @@ export type SettingField = {
   key: string;
   label: string;
   group: string;
-  kind: "model" | "int" | "models";
+  kind: "model" | "int" | "models" | "choice";
   help: string;
   minimum: number | null;
   maximum: number | null;
   restart: boolean;
+  choices: string[] | null;
   value: string | number | string[];
   default: string | number | string[];
   changed: boolean;
@@ -408,7 +415,7 @@ export const api = {
   status: () => call<Status>("/api/status"),
   models: () => call<ModelList>("/api/models"),
   sessions: (q = "") => call<SessionRow[]>(`/api/sessions?q=${encodeURIComponent(q)}`),
-  patchConversation: (id: string, patch: { title?: string; model?: string | null }) =>
+  patchConversation: (id: string, patch: { title?: string; model?: string | null; thinking?: ThinkingLevel | null }) =>
     call<Conversation>(`/api/conversations/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
   bulkDelete: (ids: string[]) =>
     call<{ removed: number }>("/api/conversations/bulk-delete", { method: "POST", body: JSON.stringify({ ids }) }),

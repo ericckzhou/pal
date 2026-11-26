@@ -6,6 +6,8 @@ from urllib.parse import urlparse
 
 import httpx
 
+from .thinking import Thought, ollama_think
+
 ALLOWED_MODELS = frozenset({"qwen3.5:4b"})
 EMBED_MODELS = frozenset({"nomic-embed-text"})
 _LOOPBACK = {"127.0.0.1", "localhost", "::1"}
@@ -43,13 +45,19 @@ class OllamaGateway:
             raise LLMError(f"model {chosen!r} is not on the allowlist")
         return chosen
 
-    def stream_chat(self, messages: list[dict], model: str | None = None, usage: dict | None = None) -> Iterator[str]:
-        """Yields reply text. When `usage` is given it is filled with Ollama's token counts at the end."""
+    def stream_chat(
+        self, messages: list[dict], model: str | None = None, usage: dict | None = None, thinking: str = "off"
+    ) -> Iterator[str]:
+        """Yields reply text, and `Thought` chunks of reasoning when thinking is on.
+
+        When `usage` is given it is filled with Ollama's token counts at the end.
+        """
+        chosen = self.check_model(model)
         body = {
-            "model": self.check_model(model),
+            "model": chosen,
             "messages": messages,
             "stream": True,
-            "think": False,
+            "think": ollama_think(chosen, thinking),
             "options": {"num_ctx": self.num_ctx},
         }
         try:
@@ -63,6 +71,9 @@ class OllamaGateway:
                     data = json.loads(line)
                     if data.get("error"):
                         raise LLMError(data["error"])
+                    thought = data.get("message", {}).get("thinking")
+                    if thought:
+                        yield Thought(thought)
                     text = data.get("message", {}).get("content")
                     if text:
                         yield text

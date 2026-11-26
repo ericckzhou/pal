@@ -86,6 +86,14 @@ export default function SettingsPage({ onAuthError, onSaved }: Props) {
           onChange={(e) => setDraft({ ...draft, [f.key]: e.target.value === "" ? "" : Number(e.target.value) })}
         />
       );
+    } else if (f.kind === "choice") {
+      input = (
+        <select id={id} value={String(v)} onChange={(e) => setDraft({ ...draft, [f.key]: e.target.value })}>
+          {(f.choices ?? []).map((c) => (
+            <option key={c} value={c}>{c}</option>
+          ))}
+        </select>
+      );
     } else if (f.kind === "model") {
       input = (
         <select id={id} value={String(v)} onChange={(e) => setDraft({ ...draft, [f.key]: e.target.value })}>

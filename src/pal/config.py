@@ -28,6 +28,7 @@ class Settings:
     extra_models: tuple[str, ...] = ()  # owner-added local models (Settings page), on top of llm.ALLOWED_MODELS
     num_ctx: int = 8192
     answer_reserve: int = 1536
+    thinking: str = "off"  # default thinking level for chats that don't pick one (thinking.LEVELS)
     allowed_hosts: tuple[str, ...] = ("127.0.0.1:8765", "localhost:8765")  # this PC (plain http on loopback)
     public_host: str | None = None  # tailnet name served by Tailscale Serve over https; `pal serve` detects it
     session_days: int = 30

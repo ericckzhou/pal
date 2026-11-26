@@ -34,10 +34,19 @@ class FakeLLM:
         self.embed_calls = 0
         self.models_used: list[str] = []
         self.ollama_down = False
+        self.thinking_used: list[str] = []
+        self.thoughts: list[str] = []
 
-    def stream_chat(self, messages: list[dict], model: str | None = None, usage: dict | None = None) -> Iterator[str]:
+    def stream_chat(
+        self, messages: list[dict], model: str | None = None, usage: dict | None = None, thinking: str = "off"
+    ) -> Iterator[str]:
+        from pal.thinking import Thought
+
         self.calls.append(messages)
         self.models_used.append(model or self.model)
+        self.thinking_used.append(thinking)
+        if thinking != "off":
+            yield from (Thought(t) for t in self.thoughts)
         for part in self.reply:
             yield part
         if self.fail:

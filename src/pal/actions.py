@@ -217,7 +217,8 @@ HELP = (
     "- `/remind tomorrow 6pm to call mom` or `/remind every monday 9am review the week`\n"
     "- `/note text` and `/decision text` save a note or decision to this chat's project\n"
     "- `/project name` sets this chat's project (creating it if new); `/project none` clears it\n"
-    "- `/model` lists models; `/model name` switches this chat (part of the name is enough); `/model default` resets"
+    "- `/model` lists models; `/model name` switches this chat (part of the name is enough); `/model default` resets\n"
+    "- `/think` shows this chat's thinking level; `/think off|low|medium|high` sets it; `/think default` resets"
 )
 
 

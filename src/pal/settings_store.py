@@ -12,6 +12,7 @@ from psycopg.types.json import Jsonb
 
 from .config import Settings
 from .llm import OllamaGateway
+from .thinking import LEVELS
 
 
 @dataclass(frozen=True)
@@ -19,11 +20,12 @@ class Field:
     key: str
     label: str
     group: str
-    kind: str  # "model" | "int" | "models"
+    kind: str  # "model" | "int" | "models" | "choice"
     help: str
     minimum: int | None = None
     maximum: int | None = None
     restart: bool = False
+    choices: tuple[str, ...] = ()
 
 
 FIELDS: tuple[Field, ...] = (
@@ -33,6 +35,9 @@ FIELDS: tuple[Field, ...] = (
     Field("num_ctx", "Context size (tokens)", "model", "int", "How much text the model reads per reply.", 2048, 131072),
     Field("answer_reserve", "Reply budget (tokens)", "model", "int",
           "Room kept free in the context for the reply itself.", 256, 8192),
+    Field("thinking", "Default thinking level", "model", "choice",
+          "How much a model reasons before replying, for chats that don't pick their own (/think). Higher is "
+          "slower; off replies straight away.", choices=LEVELS),
     Field("memory_idle_minutes", "Suggest memories after (minutes idle)", "memory", "int",
           "A chat this quiet counts as ended, and pal then suggests memories from it.", 5, 240, restart=True),
     Field("session_days", "Sign-in lasts (days)", "security", "int", "How long a sign-in on this PC stays valid.", 1, 365),
@@ -83,6 +88,9 @@ def validate(changes: dict, allowed: frozenset[str], installed: list[str] | None
             missing = [m for m in value if installed is not None and m not in installed]
             if missing:
                 raise SettingsError(f"Not installed in Ollama: {', '.join(missing)}")
+        elif field.kind == "choice":
+            if value not in field.choices:
+                raise SettingsError(f"{field.label} must be one of: {', '.join(field.choices)}")
         elif field.kind == "model":
             if not isinstance(value, str):
                 raise SettingsError("Pick a model")
@@ -120,6 +128,7 @@ def describe(settings: Settings, defaults: Settings, overrides: dict) -> list[di
         out.append({
             "key": f.key, "label": f.label, "group": f.group, "kind": f.kind, "help": f.help,
             "minimum": f.minimum, "maximum": f.maximum, "restart": f.restart,
+            "choices": list(f.choices) or None,
             "value": list(value) if f.kind == "models" else value,
             "default": list(getattr(defaults, f.key)) if f.kind == "models" else getattr(defaults, f.key),
             "changed": f.key in overrides,

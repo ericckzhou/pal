@@ -26,7 +26,7 @@ def create_conversation(conn: psycopg.Connection) -> dict:
 
 
 def get_conversation(conn: psycopg.Connection, conv_id: UUID) -> dict | None:
-    found = _rows(conn, "SELECT id, title, updated_at, project_id, model FROM conversations WHERE id = %s", (conv_id,))
+    found = _rows(conn, "SELECT id, title, updated_at, project_id, model, thinking FROM conversations WHERE id = %s", (conv_id,))
     if not found:
         return None
     conv = found[0]

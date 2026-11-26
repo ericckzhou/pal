@@ -227,6 +227,7 @@ def models(request: Request) -> dict:
 class ConversationPatch(BaseModel):
     title: str | None = Field(default=None, max_length=200)
     model: str | None = Field(default=None, max_length=100)
+    thinking: Literal["off", "low", "medium", "high"] | None = None
 
     @field_validator("title")
     @classmethod
@@ -264,7 +265,9 @@ def patch_conversation(conv_id: UUID, body: ConversationPatch, request: Request)
             conn.execute("UPDATE conversations SET title = %s WHERE id = %s", (body.title, conv_id))
         if "model" in fields:
             conn.execute("UPDATE conversations SET model = %s WHERE id = %s", (body.model, conv_id))
-        return _rows(conn, "SELECT id, title, updated_at, project_id, model FROM conversations WHERE id = %s",
+        if "thinking" in fields:
+            conn.execute("UPDATE conversations SET thinking = %s WHERE id = %s", (body.thinking, conv_id))
+        return _rows(conn, "SELECT id, title, updated_at, project_id, model, thinking FROM conversations WHERE id = %s",
                      (conv_id,))[0]
 
 
