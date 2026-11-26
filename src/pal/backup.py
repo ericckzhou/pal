@@ -17,8 +17,20 @@ CONTAINER = "pal-db-1"
 RESTORE_DB = "pal_restore_check"
 
 
+def _command(args: tuple[str, ...]) -> tuple[list[str], dict | None]:
+    """How to run a Postgres tool: `docker exec` into the DB container on Windows, or directly inside pal's image."""
+    from .config import Settings, db_password, in_container
+
+    if not in_container():
+        return ["docker", "exec", "-i", CONTAINER, *args], None
+    settings = Settings.from_env()
+    env = {**os.environ, "PGHOST": settings.db_host, "PGPORT": str(settings.db_port), "PGPASSWORD": db_password()}
+    return list(args), env
+
+
 def _docker(*args: str, stdin: bytes | None = None) -> bytes:
-    result = subprocess.run(["docker", "exec", "-i", CONTAINER, *args], input=stdin, capture_output=True)
+    command, env = _command(args)
+    result = subprocess.run(command, input=stdin, capture_output=True, env=env)
     if result.returncode != 0:
         raise RuntimeError(f"{args[0]} failed: {result.stderr.decode(errors='replace').strip()}")
     return result.stdout
@@ -81,7 +93,7 @@ def restore_check(dump_path: Path, key: bytes | None, source_db: str = "pal") ->
 
 
 def start_nightly(backup_dir: Path, db_name: str, keep: int, hour: int = 3) -> threading.Thread:
-    """The key is read from Credential Manager on each run, so a key restored later is picked up."""
+    """The key is read from the secret store on each run, so a key restored later is picked up."""
     def loop() -> None:
         while True:
             now = datetime.now()

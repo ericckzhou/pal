@@ -15,6 +15,7 @@ import threading
 from collections import Counter
 from functools import cache
 from pathlib import Path
+from typing import Any
 
 # Must be set before huggingface_hub is first imported (Docling imports it lazily, below).
 os.environ.setdefault("HF_HUB_OFFLINE", "1")
@@ -33,8 +34,9 @@ class PdfError(ValueError):
 
 
 def models_dir() -> Path:
-    base = os.environ.get("LOCALAPPDATA") or str(Path.home() / ".local" / "share")
-    return Path(base) / "pal" / "docling-models"
+    from .config import data_dir
+
+    return data_dir() / "docling-models"
 
 
 @cache
@@ -86,7 +88,7 @@ def _pypdf(data: bytes) -> tuple[str | None, list[dict]]:
         pages = [page.extract_text() or "" for page in reader.pages]
     except Exception as exc:
         raise PdfError(f"Could not read this PDF ({type(exc).__name__}).") from exc
-    blocks = []
+    blocks: list[dict] = []
     for page_no, text in enumerate(strip_running_lines(pages), start=1):
         text = re.sub(r"(\w)-\n(\w)", r"\1\2", text)  # re-join words hyphenated across a line break
         blocks.extend({"heading": None, "page": page_no, "text": p.strip()}
@@ -168,10 +170,11 @@ def docling_blocks(doc) -> tuple[str | None, list[dict]]:
         text = (chunk.text or "").strip()
         if not text:
             continue
-        headings = [h.strip() for h in (chunk.meta.headings or []) if h and h.strip()]
+        meta: Any = chunk.meta  # DocMeta at runtime; typed as its base class
+        headings = [h.strip() for h in (meta.headings or []) if h and h.strip()]
         if headings and title and headings[0] == title:
             headings = headings[1:]
-        page = next((p.page_no for item in chunk.meta.doc_items for p in (item.prov or [])), None)
+        page = next((p.page_no for item in meta.doc_items for p in (item.prov or [])), None)
         blocks.append({"heading": " › ".join(headings) or None, "page": page, "text": text})
     return title, blocks
 

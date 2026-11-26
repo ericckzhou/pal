@@ -12,13 +12,29 @@ from fastapi.staticfiles import StaticFiles
 from psycopg_pool import ConnectionPool
 
 from . import (
-    api, brief, dashboard_api, devices, devices_api, documents_api, embed, encryption, ingest, logbuffer, memory,
-    memory_api, reminders, review, review_api, security, settings_store, work_api,
+    api,
+    brief,
+    claude,
+    dashboard_api,
+    devices,
+    devices_api,
+    documents_api,
+    embed,
+    encryption,
+    ingest,
+    logbuffer,
+    memory,
+    memory_api,
+    reminders,
+    review,
+    review_api,
+    security,
+    settings_store,
+    work_api,
 )
 from .auth import LoginLimiter
 from .backup import start_nightly
 from .config import Settings, dsn
-from . import claude
 from .llm import OllamaGateway
 
 log = logging.getLogger("pal.app")
@@ -107,7 +123,7 @@ def _claude_from_keyring():
     try:
         key = claude.load_key()
     except Exception:
-        log.exception("could not read the Anthropic API key from Credential Manager")
+        log.exception("could not read the Anthropic API key")
         return None
     return claude.ClaudeGateway(key) if key else None
 

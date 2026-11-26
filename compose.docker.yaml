@@ -1,0 +1,56 @@
+# pal on Linux or macOS: pal + PostgreSQL + Ollama, all in Docker.
+# Don't run this file directly; use scripts/pal-docker.sh, which prepares the secrets folder and your user id.
+# (Windows uses compose.yaml, which runs only the database; see the README.)
+#
+# Network: only pal's port is published, and only on the host's 127.0.0.1. The database and Ollama have no
+# published ports at all; pal reaches them by service name on the private compose network.
+
+name: pal-stack  # not "pal": the Windows setup's database container is pal-db-1
+
+services:
+  db:
+    image: pgvector/pgvector:0.8.1-pg18
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: pal
+      POSTGRES_DB: pal
+      POSTGRES_PASSWORD_FILE: /run/pal-secrets/postgres
+    volumes:
+      - pal_pgdata:/var/lib/postgresql
+      - ${PAL_HOME:?run via scripts/pal-docker.sh}/secrets/postgres:/run/pal-secrets/postgres:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pal -d pal"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  ollama:
+    image: ollama/ollama:0.40.18
+    restart: unless-stopped
+    volumes:
+      - ollama_models:/root/.ollama
+
+  pal:
+    build: .
+    image: pal:local
+    restart: unless-stopped
+    user: "${PAL_UID:?run via scripts/pal-docker.sh}:${PAL_GID:?run via scripts/pal-docker.sh}"
+    depends_on:
+      db:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+    environment:
+      PAL_DB_HOST: db
+      PAL_OLLAMA_URL: http://ollama:11434
+      PAL_PUBLIC_HOST: ${PAL_PUBLIC_HOST:-}  # your tailnet name, if you use Tailscale Serve on the host
+    ports:
+      - "127.0.0.1:${PAL_PORT:-8765}:8765"  # S1: loopback on the host only
+    volumes:
+      - ${PAL_HOME}/secrets:/run/pal-secrets  # DB password, backup key, optional Anthropic key (one file each)
+      - ${PAL_HOME}/data:/data                # encrypted backups, Docling models, kept uploads
+      - ${PAL_DOCS:-./.no-docs}:/docs:ro      # optional: a folder of your documents to add with `pal ingest /docs`
+
+volumes:
+  pal_pgdata:
+  ollama_models:

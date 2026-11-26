@@ -74,24 +74,20 @@ def decode_key(text: str) -> bytes:
 
 
 def load_key(create: bool = True) -> bytes:
-    """The backup key from Credential Manager; made on first use when `create` is set."""
-    import keyring
+    """The backup key from the secret store; made on first use when `create` is set."""
+    from . import secret_store
 
-    from .config import KEYRING_SERVICE
-
-    stored = keyring.get_password(KEYRING_SERVICE, KEYRING_ACCOUNT)
+    stored = secret_store.get(KEYRING_ACCOUNT)
     if stored:
         return decode_key(stored)
     if not create:
-        raise BackupKeyError("No backup key in Credential Manager.")
+        raise BackupKeyError(f"No backup key in {secret_store.where()}.")
     key = secrets.token_bytes(KEY_BYTES)
-    keyring.set_password(KEYRING_SERVICE, KEYRING_ACCOUNT, encode_key(key))
+    secret_store.put(KEYRING_ACCOUNT, encode_key(key))
     return key
 
 
 def store_key(key: bytes) -> None:
-    import keyring
+    from . import secret_store
 
-    from .config import KEYRING_SERVICE
-
-    keyring.set_password(KEYRING_SERVICE, KEYRING_ACCOUNT, encode_key(key))
+    secret_store.put(KEYRING_ACCOUNT, encode_key(key))

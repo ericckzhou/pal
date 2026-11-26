@@ -13,13 +13,14 @@ from uuid import UUID
 import psycopg
 from psycopg.rows import dict_row
 
+from . import rerank
 from .embed import QUERY_PREFIX, vector_literal
 
 log = logging.getLogger("pal.retrieval")
 
 VEC_MIN = 0.60  # cosine similarity; related text scored 0.61-0.81, unrelated 0.33-0.59 (nomic-embed-text)
 _HANDLE = re.compile(r"\s?\[[mdcnp]\d+\]")  # citation handles inside old replies mean nothing out of their turn
-FTS_VEC_MIN = 0.45  # a keyword match also needs at least this much similarity once vectors exist
+FTS_VEC_MIN = 0.55  # a keyword match also needs this much similarity; 0.45 -> 0.55 cut no-answer noise (eval/RETRIEVAL.md)
 PER_LIST = 8
 MAX_ITEMS = 6
 MAX_PINNED = 20
@@ -85,6 +86,9 @@ def _search(
         fts = cur.execute(fts_sql, params).fetchall()
         vec = []
         if qvec:
+            # HNSW + a WHERE filter (confirmed memories, other chats) could otherwise return fewer than `n` rows:
+            # iterative scan keeps walking the index until enough rows pass the filter, in exact distance order.
+            cur.execute("SET hnsw.iterative_scan = strict_order")
             vec_sql = (
                 sql.format(sim=sim, where=f"{a}embedding IS NOT NULL")
                 + f" ORDER BY {a}embedding <=> %(qvec)s::vector LIMIT %(n)s"
@@ -98,12 +102,16 @@ def _search(
 
 
 def retrieve(
-    conn: psycopg.Connection, llm, query: str, conv_id: UUID | None = None, project_id: UUID | None = None
+    conn: psycopg.Connection, llm, query: str, conv_id: UUID | None = None, project_id: UUID | None = None,
+    use_rerank: bool | None = None,
 ) -> list[dict]:
     """Return context items: pinned memories first, then the best fused matches. Each has a `handle`.
 
     Items tagged with `project_id` (the chat's focus project) get a score boost; untagged items still compete.
+    With `use_rerank` (Settings > Search), the local model reads the top fused candidates and drops the ones that
+    don't answer the question (rerank.py).
     """
+    use_rerank = rerank.ENABLED if use_rerank is None else use_rerank
     query = query.strip()
     qvec = _query_vector(llm, query) if query else None
     scores: dict[tuple[str, UUID], float] = {}
@@ -119,7 +127,13 @@ def retrieve(
         for key, r in rows.items():
             if r.get("project_id") == project_id:
                 scores[key] *= PROJECT_BOOST
-    best = sorted(scores, key=lambda k: scores[k], reverse=True)[:MAX_ITEMS]
+    order = sorted(scores, key=lambda k: scores[k], reverse=True)
+    if use_rerank and order:
+        pool = order[: rerank.POOL]
+        kept = rerank.rerank(llm, query, [dict(rows[k], key=k) for k in pool])
+        best = [c["key"] for c in kept][:MAX_ITEMS]
+    else:
+        best = order[:MAX_ITEMS]
 
     with conn.cursor(row_factory=dict_row) as cur:
         pinned = cur.execute(

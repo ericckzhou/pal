@@ -179,8 +179,8 @@ def _scan(text: str, now: datetime) -> tuple[When | None, list[tuple[int, int]]]
 
     if day is None and clock is None:
         return None, []
-    if day is None:  # only a time: today if it's still ahead, else tomorrow
-        day = today if datetime.combine(today, clock) > now else today + timedelta(days=1)
+    if day is None:  # only a time (clock is set, checked above): today if it's still ahead, else tomorrow
+        day = today if datetime.combine(today, clock or DEFAULT_TIME) > now else today + timedelta(days=1)
     at = datetime.combine(day, clock or DEFAULT_TIME)
     if before and clock is not None:
         n = _num(before["n"])

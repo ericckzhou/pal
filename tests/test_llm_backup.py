@@ -1,9 +1,8 @@
 import json
+import os
 
 import httpx
 import pytest
-
-import os
 
 from pal import backup_crypto
 from pal.backup import backup_files, encrypt_legacy, restore_check, run_backup
@@ -96,6 +95,7 @@ def test_backup_key_encoding_and_keyring(monkeypatch):
     store: dict = {}
     import keyring
 
+    monkeypatch.delenv("PAL_SECRETS_DIR", raising=False)  # CI keeps real secrets in a folder; this tests keyring
     monkeypatch.setattr(keyring, "get_password", lambda svc, acct: store.get((svc, acct)))
     monkeypatch.setattr(keyring, "set_password", lambda svc, acct, val: store.__setitem__((svc, acct), val))
     with pytest.raises(backup_crypto.BackupKeyError):

@@ -126,8 +126,9 @@ export default function DocProcessing({ onProgress, onAuthError }: Props) {
       )}
       {stale.uploads > 0 && s.pdf_reader === "docling" && (
         <p className="small muted">
-          {stale.uploads} uploaded PDF{stale.uploads === 1 ? "" : "s"} can't be re-read because pal doesn't keep uploaded
-          files. Upload {stale.uploads === 1 ? "it" : "them"} again to use the new reader.
+          {stale.uploads} PDF{stale.uploads === 1 ? " was" : "s were"} uploaded before pal kept encrypted copies of
+          uploads, so {stale.uploads === 1 ? "it" : "they"} can't be re-read. Upload {stale.uploads === 1 ? "it" : "them"}{" "}
+          again to use the new reader.
         </p>
       )}
       {error && <p className="error small">{error}</p>}

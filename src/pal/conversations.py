@@ -6,6 +6,8 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
+from . import db
+
 TITLE_LEN = 60
 COMMAND_MODEL = "command"  # marks pal's replies to slash commands
 
@@ -26,7 +28,7 @@ def create_conversation(conn: psycopg.Connection) -> dict:
 
 
 def get_conversation(conn: psycopg.Connection, conv_id: UUID) -> dict | None:
-    found = _rows(conn, "SELECT id, title, updated_at, project_id, model, thinking FROM conversations WHERE id = %s", (conv_id,))
+    found = _rows(conn, "SELECT id, title, updated_at, project_id, model, thinking, claude_context FROM conversations WHERE id = %s", (conv_id,))
     if not found:
         return None
     conv = found[0]
@@ -58,12 +60,12 @@ def add_message(
     usage: dict | None = None,
 ) -> UUID:
     usage = usage or {}
-    msg_id = conn.execute(
+    msg_id = db.scalar(conn,
         """INSERT INTO messages (conversation_id, role, content, model, sources, steps, prompt_tokens, completion_tokens)
            VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
         (conv_id, role, content, model, Jsonb(sources) if sources else None, Jsonb(steps) if steps else None,
          usage.get("prompt_tokens"), usage.get("completion_tokens")),
-    ).fetchone()[0]
+    )
     title = " ".join(content.split())[:TITLE_LEN]
     if title.startswith("/"):  # a slash command makes a poor chat title; wait for a real message
         role = "command"

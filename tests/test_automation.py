@@ -1,8 +1,8 @@
 import os
 import time
+from datetime import datetime, timedelta
 
 import psycopg
-from datetime import datetime, timedelta
 
 from pal import brief, ingest, reminders, work
 

@@ -30,12 +30,21 @@ const ABOUT =
 function draft(c: DemoConversation, action: Proposal["action"], title: string, when: string | null, s: DemoState): Proposal {
   const project = s.projects.find((p) => p.id === c.project_id) ?? null;
   const tomorrow = /tomorrow/i.test(when ?? "");
+  // "at 5pm", "at 7:30 am", "at 17:00": the demo reads simple times; pal itself parses dates in code (when.py).
+  const clock = (when ?? "").match(/\bat\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
+  let hour = tomorrow ? 9 : 18;
+  const minute = clock?.[2] ? Number(clock[2]) : 0;
+  if (clock) {
+    const h = Number(clock[1]);
+    const half = clock[3]?.toLowerCase();
+    hour = half ? (h % 12) + (half === "pm" ? 12 : 0) : h < 8 ? h + 12 : h; // a bare "at 5" means 5 pm
+  }
   return {
     id: newId(), conversation_id: c.id, action,
     payload: {
       title, project_id: project?.id ?? null, project: project?.name ?? null, due_text: when,
       due_date: action === "create_task" ? (when ? dateIn(tomorrow ? 1 : 3) : null) : null,
-      at: action === "set_reminder" ? localAt(tomorrow ? 1 : 0, tomorrow ? 9 : 18) : null, rrule: null, repeat: "",
+      at: action === "set_reminder" ? localAt(tomorrow ? 1 : 0, hour, minute) : null, rrule: null, repeat: "",
     },
   };
 }
@@ -70,9 +79,9 @@ function script(s: DemoState, c: DemoConversation, input: string): Script {
     return { steps: [{ kind: "memory", label: "Saved to memory", detail: memory.text }], memory, text: "Got it — I'll remember that." };
   }
 
-  const remindMe = text.match(/remind me to (.+?)(\s+(tomorrow|today|tonight|on \w+|at .+))?[.?!]?$/i);
+  const remindMe = text.match(/remind me to (.+?)((?:\s+(?:tomorrow|today|tonight|on \w+))?(?:\s+at\s+.+?)?)[.?!]?$/i);
   if (remindMe) {
-    const p = draft(c, "set_reminder", remindMe[1], remindMe[2]?.trim() ?? "today", s);
+    const p = draft(c, "set_reminder", remindMe[1], remindMe[2]?.trim() || "today", s);
     return { steps: [{ kind: "proposal", label: "Drafted a reminder", detail: p.payload.title }], proposal: p, text: "I drafted that reminder — check the time and confirm it below." };
   }
   const todo = text.match(/(?:add a task(?: to)?|i need to|todo:?)\s+(.+?)[.?!]?$/i);

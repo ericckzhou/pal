@@ -11,6 +11,7 @@ KEY = bytes(range(32))
 @pytest.fixture
 def fake_keyring(monkeypatch):
     store: dict = {}
+    monkeypatch.delenv("PAL_SECRETS_DIR", raising=False)  # CI keeps real secrets in a folder; these test keyring
     monkeypatch.setattr(keyring, "get_password", lambda svc, acct: store.get((svc, acct)))
     monkeypatch.setattr(keyring, "set_password", lambda svc, acct, val: store.__setitem__((svc, acct), val))
     return store

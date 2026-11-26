@@ -4,7 +4,7 @@ from uuid import UUID
 
 import psycopg
 
-from . import claude
+from . import claude, db
 
 RESET_WORDS = ("default", "reset", "none")
 
@@ -18,7 +18,7 @@ def _match(arg: str, names: list[str]) -> list[str]:
 
 def run(conn: psycopg.Connection, conv_id: UUID, arg: str, local: list[str], default: str, has_claude: bool) -> dict:
     """Returns {reply, model_changed: bool, model}. `local` is the allowlist of models on this PC."""
-    current = conn.execute("SELECT model FROM conversations WHERE id = %s", (conv_id,)).fetchone()[0]
+    current = db.scalar(conn, "SELECT model FROM conversations WHERE id = %s", (conv_id,))
     arg = arg.strip()
     if not arg:
         return {"reply": _listing(current, local, default, has_claude), "model_changed": False, "model": current}

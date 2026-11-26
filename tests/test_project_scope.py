@@ -35,9 +35,9 @@ def test_chat_passes_its_focus_project_to_retrieval(authed, db, llm, monkeypatch
     seen = {}
     real = retrieval.retrieve
 
-    def spy(conn, llm_, query, conv=None, project_id=None):
+    def spy(conn, llm_, query, conv=None, project_id=None, **kwargs):
         seen["project_id"] = project_id
-        return real(conn, llm_, query, conv, project_id)
+        return real(conn, llm_, query, conv, project_id, **kwargs)
 
     monkeypatch.setattr(retrieval, "retrieve", spy)
     chat(authed, "what is left to do?", conv_id)

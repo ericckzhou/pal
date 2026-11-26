@@ -75,6 +75,7 @@ export default function Chat({
   const [suggesting, setSuggesting] = useState(false);
   const [model, setModel] = useState<string | null>(null);
   const [thinking, setThinking] = useState<ThinkingLevel | null>(null);
+  const [claudeContext, setClaudeContext] = useState(false);
   const idRef = useRef<string | null>(convId);
   const endRef = useRef<HTMLDivElement>(null);
 
@@ -90,10 +91,15 @@ export default function Chat({
   // The rail can switch this chat's model, so re-read it whenever the chat list changes.
   useEffect(() => {
     if (convId)
-      api.get(convId).then((c) => { setModel(c.model ?? null); setThinking(c.thinking ?? null); }).catch(onAuthError);
+      api.get(convId).then((c) => {
+        setModel(c.model ?? null);
+        setThinking(c.thinking ?? null);
+        setClaudeContext(Boolean(c.claude_context));
+      }).catch(onAuthError);
     else {
       setModel(newChatModel);
       setThinking(null);
+      setClaudeContext(false);
     }
   }, [convId, listVersion, newChatModel, onAuthError]);
 
@@ -210,6 +216,18 @@ export default function Chat({
     }
   };
 
+  const changeClaudeContext = async (on: boolean) => {
+    if (!idRef.current) return;
+    setError("");
+    try {
+      await api.patchConversation(idRef.current, { claude_context: on });
+      setClaudeContext(on);
+    } catch (err) {
+      onAuthError(err);
+      setError("Could not change what this chat shares with Claude.");
+    }
+  };
+
   const changeThinking = async (value: string) => {
     const level = (value || null) as ThinkingLevel | null;
     setThinking(level);
@@ -254,8 +272,16 @@ export default function Chat({
       </div>
       {isClaude(model) && (
         <p className="cloud-banner small" role="status">
-          <Icon name="bolt" size={14} /> <strong>{model}</strong>: this chat's messages are sent to Anthropic. Memories,
-          documents and notes are not.
+          <Icon name="bolt" size={14} /> <strong>{model}</strong>: this chat's messages are sent to Anthropic.{" "}
+          {claudeContext
+            ? "Memories, documents and notes that match each message are sent too (listed under each reply)."
+            : "Memories, documents and notes are not."}
+          {convId && (
+            <label className="cloud-share">
+              <input type="checkbox" checked={claudeContext} onChange={(e) => changeClaudeContext(e.target.checked)} />
+              Share matching memories and documents with Claude
+            </label>
+          )}
         </p>
       )}
       <div className="messages">

@@ -12,7 +12,7 @@ import subprocess
 from pathlib import Path
 
 log = logging.getLogger("pal.tailnet")
-WINDOWS_EXE = Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "Tailscale" / "tailscale.exe"
+WINDOWS_EXE = Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "Tailscale" / "tailscale.exe"  # noqa: SIM112
 
 
 def tailscale_exe() -> str | None:

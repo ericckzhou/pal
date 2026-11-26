@@ -9,7 +9,6 @@ import pytest
 from pal import claude
 from pal.llm import LLMError
 
-
 # ---------- gateway (mock transport) ----------
 
 def _sse(*events: dict) -> bytes:
@@ -128,6 +127,28 @@ def test_claude_chat_gets_only_its_own_text(authed, db, llm):
     assert "4471" not in sent and "<context>" not in sent
     assert "what is my locker code?" in sent
     assert len(llm.calls) == 1  # the local model wasn't asked for the Claude chat's reply
+
+
+def test_claude_chat_shares_matching_context_only_after_opting_in(authed, db, llm):
+    fake = FakeClaude()
+    authed.app.state.claude = fake
+    db.execute("INSERT INTO memories (text, kind, origin, status) "
+               "VALUES ('My locker code is 4471', 'fact', 'stated', 'confirmed')")
+    conv = authed.post("/api/conversations").json()["id"]
+    assert authed.patch(f"/api/conversations/{conv}", json={"model": "claude-opus-5-5"}).json()["claude_context"] is False
+    _send(authed, conv, "what is my locker code?")
+    assert "4471" not in json.dumps(fake.calls[-1])
+
+    changed = authed.patch(f"/api/conversations/{conv}", json={"claude_context": True}).json()
+    assert changed["claude_context"] is True
+    events = _send(authed, conv, "what is my locker code?")
+    sent = json.dumps(fake.calls[-1])
+    assert "<context>" in sent and "4471" in sent
+    assert any(e["type"] == "sources" for e in events)  # the owner sees exactly what was shared
+
+    authed.patch(f"/api/conversations/{conv}", json={"claude_context": False})
+    _send(authed, conv, "and again?")
+    assert "<context>" not in json.dumps(fake.calls[-1])
 
 
 def test_claude_chat_without_key_is_refused(authed, db):

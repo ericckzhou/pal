@@ -26,3 +26,6 @@ eval/results/
 htmlcov/
 .ruff_cache/
 *.enc
+
+# Docker helper: empty stand-in when PAL_DOCS isn't set
+.no-docs/

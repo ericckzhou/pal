@@ -6,6 +6,7 @@ from urllib.parse import urlparse
 
 import httpx
 
+from .config import in_container
 from .thinking import Thought, ollama_think
 
 ALLOWED_MODELS = frozenset({"qwen3.5:4b"})
@@ -32,7 +33,9 @@ class OllamaGateway:
         if model not in self.allowed or embed_model not in EMBED_MODELS:
             raise ValueError(f"model {model!r} / {embed_model!r} is not on the allowlist")
         self.embed_model = embed_model
-        if urlparse(base_url).hostname not in _LOOPBACK:
+        host = urlparse(base_url).hostname
+        if host not in _LOOPBACK and not (in_container() and host and "." not in host):
+            # In pal's container, Ollama is the compose service "ollama": a bare name on the private Docker network.
             raise ValueError("Ollama must be reached on loopback")
         self.base_url = base_url.rstrip("/")
         self.model = model

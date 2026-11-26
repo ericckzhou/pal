@@ -163,9 +163,7 @@ def score_action(case: dict, out: dict | None) -> bool:
         rec = field("recurrence_text") + " " + field("due_text")
         if not any(k in rec for k in case["recurrence_any"]):
             return False
-    if "project" in case and case["project"] not in field("project"):
-        return False
-    return True
+    return not ("project" in case and case["project"] not in field("project"))
 
 
 def judge(judge_call, case: dict, answer: str) -> dict:

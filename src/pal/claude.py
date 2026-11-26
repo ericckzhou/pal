@@ -26,35 +26,24 @@ def is_claude(model: str | None) -> bool:
 
 
 def load_key() -> str | None:
-    import keyring
+    from . import secret_store
 
-    from .config import KEYRING_SERVICE
-
-    return keyring.get_password(KEYRING_SERVICE, KEYRING_ACCOUNT) or None
+    return secret_store.get(KEYRING_ACCOUNT)
 
 
 def store_key(key: str) -> None:
-    import keyring
-
-    from .config import KEYRING_SERVICE
+    from . import secret_store
 
     key = key.strip()
     if not key.startswith("sk-ant-"):
         raise ValueError("That doesn't look like an Anthropic API key (they start with sk-ant-).")
-    keyring.set_password(KEYRING_SERVICE, KEYRING_ACCOUNT, key)
+    secret_store.put(KEYRING_ACCOUNT, key)
 
 
 def clear_key() -> bool:
-    import keyring
-    from keyring.errors import PasswordDeleteError
+    from . import secret_store
 
-    from .config import KEYRING_SERVICE
-
-    try:
-        keyring.delete_password(KEYRING_SERVICE, KEYRING_ACCOUNT)
-        return True
-    except PasswordDeleteError:
-        return False
+    return secret_store.delete(KEYRING_ACCOUNT)
 
 
 def since_switch(past: list[dict]) -> list[dict]:

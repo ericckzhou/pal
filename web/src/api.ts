@@ -5,6 +5,7 @@ export type Conversation = {
   project_id?: string | null;
   model?: string | null;
   thinking?: ThinkingLevel | null;
+  claude_context?: boolean; // a Claude chat also sends matching memories, documents and notes (opt-in)
   message_count?: number;
 };
 export const THINKING_LEVELS = ["off", "low", "medium", "high"] as const;
@@ -273,6 +274,7 @@ export type SettingField = {
   changed: boolean;
 };
 export type SettingsReport = { fields: SettingField[]; allowed_models: string[]; installed_models: string[] | null };
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- WebAuthn options are opaque JSON, converted in webauthn.ts
 type Ceremony = { flow: string; options: Record<string, any> };
 
 export class ApiError extends Error {
@@ -415,7 +417,7 @@ export const api = {
   status: () => call<Status>("/api/status"),
   models: () => call<ModelList>("/api/models"),
   sessions: (q = "") => call<SessionRow[]>(`/api/sessions?q=${encodeURIComponent(q)}`),
-  patchConversation: (id: string, patch: { title?: string; model?: string | null; thinking?: ThinkingLevel | null }) =>
+  patchConversation: (id: string, patch: { title?: string; model?: string | null; thinking?: ThinkingLevel | null; claude_context?: boolean }) =>
     call<Conversation>(`/api/conversations/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
   bulkDelete: (ids: string[]) =>
     call<{ removed: number }>("/api/conversations/bulk-delete", { method: "POST", body: JSON.stringify({ ids }) }),

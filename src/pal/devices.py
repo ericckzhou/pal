@@ -32,6 +32,8 @@ from webauthn.helpers.structs import (
     UserVerificationRequirement,
 )
 
+from . import db
+
 CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no 0/O, 1/I
 CODE_LEN = 8
 CODE_MINUTES = 10
@@ -62,11 +64,11 @@ def create_pairing_code(conn: psycopg.Connection, name: str, kind: str) -> dict:
     if kind not in KINDS:
         raise DeviceError(f"Kind must be one of: {', '.join(KINDS)}.")
     code = "".join(secrets.choice(CODE_ALPHABET) for _ in range(CODE_LEN))
-    expires = conn.execute(
+    expires = db.scalar(conn,
         "INSERT INTO pairing_codes (code_hash, device_name, kind, expires_at) "
         "VALUES (%s, %s, %s, now() + make_interval(mins => %s)) RETURNING expires_at",
         (_code_hash(code), name, kind, CODE_MINUTES),
-    ).fetchone()[0]
+    )
     conn.execute("DELETE FROM pairing_codes WHERE expires_at < now() - interval '1 day'")
     return {"code": format_code(code), "raw": code, "name": name, "kind": kind, "expires_at": expires.isoformat()}
 
@@ -91,7 +93,7 @@ def list_devices(conn: psycopg.Connection) -> list[dict]:
     keys = ("id", "name", "kind", "created_at", "last_seen_at", "revoked_at", "passkeys")
     out = []
     for row in rows:
-        d = dict(zip(keys, row))
+        d = dict(zip(keys, row, strict=True))
         for k in ("created_at", "last_seen_at", "revoked_at"):
             d[k] = d[k].isoformat() if d[k] else None
         d["id"] = str(d["id"])
@@ -195,9 +197,9 @@ def finish_registration(conn: psycopg.Connection, ceremony: Ceremony, credential
         ).fetchone()
         if row is None:
             raise DeviceError("That pairing code has expired or was already used. Make a new one at the PC.")
-        device_id = conn.execute(
+        device_id = db.scalar(conn,
             "INSERT INTO devices (name, kind, last_seen_at) VALUES (%s, %s, now()) RETURNING id", row
-        ).fetchone()[0]
+        )
         conn.execute(
             "INSERT INTO passkeys (credential_id, device_id, public_key, sign_count, rp_id) VALUES (%s, %s, %s, %s, %s)",
             (v.credential_id, device_id, v.credential_public_key, v.sign_count, ceremony.rp_id),

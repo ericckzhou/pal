@@ -14,7 +14,7 @@ from uuid import UUID
 import psycopg
 from psycopg.rows import dict_row
 
-from . import pdf
+from . import db, pdf
 
 log = logging.getLogger("pal.ingest")
 
@@ -131,7 +131,7 @@ def pack_blocks(blocks: list[dict]) -> list[dict]:
     for block in blocks:
         for piece in _pack(block["text"]):
             fits = current is not None and len(current["content"]) + len(piece) + 2 <= CHUNK_CHARS
-            if fits and current["heading"] == block["heading"]:
+            if fits and current is not None and current["heading"] == block["heading"]:
                 current = {**current, "content": current["content"] + "\n\n" + piece}
             else:
                 if current:
@@ -212,10 +212,10 @@ def store(
                             (folder, existing["id"], folder))
             if project_id:
                 set_project(conn, existing["id"], project_id)
-            return get(conn, existing["id"]), "unchanged"
+            return db.require(get(conn, existing["id"]), "document"), "unchanged"
         kind, title, chunks, parser = parse_with_parser(filename, data)
         # Postgres text can't hold NUL; PDF extraction sometimes yields it.
-        title = _no_nul(title)
+        title = _no_nul(title) or Path(filename).stem
         chunks = [{**c, "heading": _no_nul(c["heading"]), "content": _no_nul(c["content"])} for c in chunks]
         with conn.transaction():
             if existing:
@@ -227,17 +227,17 @@ def store(
                 )
             else:
                 # A new file in a folder that belongs to a project joins that project.
-                doc_id = cur.execute(
+                doc_id = db.require(cur.execute(
                     "INSERT INTO documents (title, filename, source_path, folder, kind, sha256, size_bytes, parser, project_id) "
                     "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, COALESCE(%s, (SELECT project_id FROM documents WHERE folder = %s "
                     "AND project_id IS NOT NULL ORDER BY updated_at DESC LIMIT 1))) RETURNING id",
                     (title, Path(filename).name[:255], source_path, folder, kind, digest, len(data), parser, project_id, folder),
-                ).fetchone()["id"]
+                ).fetchone(), "document")["id"]
             cur.executemany(
                 "INSERT INTO chunks (document_id, ord, heading, page, content) VALUES (%s, %s, %s, %s, %s)",
                 [(doc_id, i, c["heading"], c["page"], c["content"]) for i, c in enumerate(chunks)],
             )
-    return get(conn, doc_id), "updated" if existing else "added"
+    return db.require(get(conn, doc_id), "document"), "updated" if existing else "added"
 
 
 def ingest_path(conn: psycopg.Connection, path: str, project_id: UUID | None = None) -> dict:
@@ -348,5 +348,15 @@ def delete_folder(conn: psycopg.Connection, folder: str) -> int:
 
 
 def delete(conn: psycopg.Connection, doc_id: UUID) -> bool:
-    """S10: the document row and every chunk (text + vector) are deleted."""
-    return conn.execute("DELETE FROM documents WHERE id = %s", (doc_id,)).rowcount == 1
+    """S10: the document row, every chunk (text + vector) and, for an uploaded PDF, its kept encrypted copy."""
+    from . import kept_uploads
+
+    row = conn.execute(
+        "DELETE FROM documents WHERE id = %s RETURNING sha256, source_path, kind", (doc_id,)
+    ).fetchone()
+    if row is None:
+        return False
+    sha256, source_path, kind = row
+    if source_path is None and kind == "pdf":
+        kept_uploads.discard(bytes(sha256))
+    return True

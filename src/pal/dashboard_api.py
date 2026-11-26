@@ -14,8 +14,8 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import PlainTextResponse
-from pydantic import BaseModel, Field, field_validator
 from psycopg.rows import dict_row
+from pydantic import BaseModel, Field, field_validator
 
 from . import auth, claude, encryption, logbuffer, reminders, reread, settings_store
 from .api import require_owner, require_session
@@ -58,7 +58,8 @@ def _memory_available() -> tuple[float, int] | None:
             return None
         return stat.ullAvailPhys / stat.ullTotalPhys, stat.ullAvailPhys
     try:
-        info = dict(line.split(":", 1) for line in open("/proc/meminfo", encoding="ascii"))
+        with open("/proc/meminfo", encoding="ascii") as f:
+            info = dict(line.split(":", 1) for line in f)
         total, avail = int(info["MemTotal"].split()[0]) * 1024, int(info["MemAvailable"].split()[0]) * 1024
         return avail / total, avail
     except (OSError, KeyError, ValueError):
@@ -228,6 +229,7 @@ class ConversationPatch(BaseModel):
     title: str | None = Field(default=None, max_length=200)
     model: str | None = Field(default=None, max_length=100)
     thinking: Literal["off", "low", "medium", "high"] | None = None
+    claude_context: bool | None = None  # a Claude chat also sends matching memories, documents and notes
 
     @field_validator("title")
     @classmethod
@@ -267,7 +269,9 @@ def patch_conversation(conv_id: UUID, body: ConversationPatch, request: Request)
             conn.execute("UPDATE conversations SET model = %s WHERE id = %s", (body.model, conv_id))
         if "thinking" in fields:
             conn.execute("UPDATE conversations SET thinking = %s WHERE id = %s", (body.thinking, conv_id))
-        return _rows(conn, "SELECT id, title, updated_at, project_id, model, thinking FROM conversations WHERE id = %s",
+        if "claude_context" in fields and body.claude_context is not None:
+            conn.execute("UPDATE conversations SET claude_context = %s WHERE id = %s", (body.claude_context, conv_id))
+        return _rows(conn, "SELECT id, title, updated_at, project_id, model, thinking, claude_context FROM conversations WHERE id = %s",
                      (conv_id,))[0]
 
 
@@ -288,13 +292,13 @@ def export(conv_id: UUID, request: Request, format: Literal["md", "json"] = "md"
             raise HTTPException(status_code=404, detail="Conversation not found")
         msgs = _rows(conn, """SELECT role, content, model, created_at, prompt_tokens, completion_tokens
                               FROM messages WHERE conversation_id = %s ORDER BY created_at, id""", (conv_id,))
-    conv = conv[0]
-    safe = "".join(ch if ch.isalnum() or ch in " -_" else "_" for ch in conv["title"])[:60].strip() or "chat"
+    head = conv[0]
+    safe = "".join(ch if ch.isalnum() or ch in " -_" else "_" for ch in head["title"])[:60].strip() or "chat"
     if format == "json":
-        body = json.dumps({**conv, "messages": msgs}, default=str, indent=2, ensure_ascii=False)
+        body = json.dumps({**head, "messages": msgs}, default=str, indent=2, ensure_ascii=False)
         media, ext = "application/json", "json"
     else:
-        parts = [f"# {conv['title']}\n", f"_Exported from pal, {conv['created_at']:%Y-%m-%d}_\n"]
+        parts = [f"# {head['title']}\n", f"_Exported from pal, {head['created_at']:%Y-%m-%d}_\n"]
         for m in msgs:
             who = "You" if m["role"] == "user" else f"pal ({m['model']})" if m["model"] else "pal"
             parts.append(f"\n**{who}** · {m['created_at']:%Y-%m-%d %H:%M}\n\n{m['content']}\n")

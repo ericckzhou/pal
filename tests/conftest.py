@@ -47,8 +47,7 @@ class FakeLLM:
         self.thinking_used.append(thinking)
         if thinking != "off":
             yield from (Thought(t) for t in self.thoughts)
-        for part in self.reply:
-            yield part
+        yield from self.reply
         if self.fail:
             raise RuntimeError("model crashed")
         if usage is not None:
@@ -90,7 +89,16 @@ class FakeLLM:
 
 
 BASELINE = math.sqrt(0.8)  # unrelated similarity = 0.8 / 1.8 = 0.44
-STOP = frozenset("a an the is are was my me i you your what when where how do does of to in on for and or it".split())
+STOP = frozenset(["a", "an", "the", "is", "are", "was", "my", "me", "i", "you", "your", "what", "when", "where", "how", "do", "does", "of", "to", "in", "on", "for", "and", "or", "it"])
+
+@pytest.fixture(autouse=True)
+def _private_data_dir(tmp_path, monkeypatch) -> None:
+    """Kept uploads go to a temp folder under a throwaway key, never the owner's data folder or real backup key."""
+    from pal import kept_uploads
+
+    monkeypatch.setenv("PAL_DATA_DIR", str(tmp_path / "pal-data"))
+    monkeypatch.setattr(kept_uploads, "_key", lambda create=True: b"k" * 32)
+
 
 @pytest.fixture(scope="session")
 def settings() -> Settings:

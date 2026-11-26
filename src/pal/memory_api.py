@@ -8,8 +8,8 @@ from pydantic import BaseModel, Field, field_validator
 
 from . import conversations, memory
 from .api import require_session
-from .work_api import _check_project
 from .llm import LLMError
+from .work_api import _check_project
 
 router = APIRouter(prefix="/api", dependencies=[Depends(require_session)])
 Kind = Literal["fact", "preference", "person", "project", "decision"]
@@ -95,6 +95,6 @@ def suggest_memories(conv_id: UUID, request: Request) -> dict:
             raise HTTPException(status_code=404, detail="Conversation not found")
         try:
             created = memory.scan_conversation(conn, state.llm, conv_id)
-        except LLMError:
-            raise HTTPException(status_code=503, detail="The local model isn't responding. Is Ollama running?")
+        except LLMError as exc:
+            raise HTTPException(status_code=503, detail="The local model isn't responding. Is Ollama running?") from exc
     return {"proposed": created}

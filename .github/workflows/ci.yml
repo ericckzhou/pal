@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    runs-on: ubuntu-24.04
+    env:
+      PAL_SECRETS_DIR: ${{ github.workspace }}/../ci-secrets  # secrets as files, outside the repo
+      PAL_TEST_DB: pal_test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Database password for this run
+        run: |
+          mkdir -p "$PAL_SECRETS_DIR"
+          openssl rand -hex 24 > "$PAL_SECRETS_DIR/postgres"
+
+      # Named pal-db-1 like the local container, so the backup/restore tests can `docker exec` into it.
+      - name: Start PostgreSQL 18 + pgvector
+        run: |
+          docker run -d --name pal-db-1 -p 127.0.0.1:5432:5432 \
+            -e POSTGRES_USER=pal -e POSTGRES_DB=pal -e POSTGRES_PASSWORD="$(cat "$PAL_SECRETS_DIR/postgres")" \
+            --health-cmd "pg_isready -U pal -d pal" --health-interval 2s --health-retries 30 \
+            pgvector/pgvector:0.8.1-pg18
+          until [ "$(docker inspect -f '{{.State.Health.Status}}' pal-db-1)" = healthy ]; do sleep 2; done
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.15"
+          enable-cache: true
+
+      - name: Install
+        run: uv sync --frozen
+
+      - name: Lint
+        run: uv run ruff check src tests eval scripts
+
+      - name: Type check
+        run: uv run mypy
+
+      - name: Tests
+        run: uv run pytest --cov=pal --cov-report=term --cov-fail-under=80
+
+  web:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.2.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm build
+      - run: pnpm build:demo

@@ -1,7 +1,7 @@
 """Projects, tasks, notes, reminders, notifications and action proposals. Owner session required (S2)."""
 
 from datetime import date, datetime
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 
 import psycopg
@@ -125,8 +125,8 @@ def create_project(body: NewProject, request: Request) -> dict:
     with _pool(request) as conn:
         try:
             return work.create_project(conn, body.name, body.summary)
-        except psycopg.errors.UniqueViolation:
-            raise HTTPException(status_code=409, detail="A project with that name already exists")
+        except psycopg.errors.UniqueViolation as exc:
+            raise HTTPException(status_code=409, detail="A project with that name already exists") from exc
 
 
 @router.get("/projects/{project_id}")
@@ -149,8 +149,8 @@ def update_project(project_id: UUID, body: ProjectPatch, request: Request) -> di
     with _pool(request) as conn:
         try:
             project = work.update_project(conn, project_id, name=body.name, summary=body.summary, status=body.status)
-        except psycopg.errors.UniqueViolation:
-            raise HTTPException(status_code=409, detail="A project with that name already exists")
+        except psycopg.errors.UniqueViolation as exc:
+            raise HTTPException(status_code=409, detail="A project with that name already exists") from exc
         return _found(project, "Project")
 
 
@@ -182,7 +182,7 @@ def update_task(task_id: UUID, body: TaskPatch, request: Request) -> dict:
     fields = body.model_fields_set
     with _pool(request) as conn:
         _check_project(conn, body.project_id)
-        kwargs = {}
+        kwargs: dict[str, Any] = {}
         if "project_id" in fields:
             kwargs["project_id"] = body.project_id
         if "due_date" in fields:
@@ -251,7 +251,7 @@ def create_reminder(body: NewReminder, request: Request) -> dict:
 
 @router.patch("/reminders/{reminder_id}")
 def update_reminder(reminder_id: UUID, body: ReminderPatch, request: Request) -> dict:
-    kwargs = {"rrule": body.rrule} if "rrule" in body.model_fields_set else {}
+    kwargs: dict[str, Any] = {"rrule": body.rrule} if "rrule" in body.model_fields_set else {}
     with _pool(request) as conn:
         return _found(reminders.update(conn, reminder_id, title=body.title,
                                        at=_local(body.at) if body.at else None, **kwargs), "Reminder")
@@ -311,7 +311,7 @@ def confirm_proposal(proposal_id: UUID, body: ProposalEdits, request: Request) -
         try:
             return _found(actions.confirm(conn, proposal_id, edits), "Proposal")
         except ValueError as exc:
-            raise HTTPException(status_code=422, detail=str(exc))
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.delete("/proposals/{proposal_id}", status_code=204)

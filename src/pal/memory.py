@@ -12,6 +12,8 @@ from uuid import UUID
 import psycopg
 from psycopg.rows import dict_row
 
+from . import db
+
 log = logging.getLogger("pal.memory")
 
 KINDS = ("fact", "preference", "person", "project", "decision")
@@ -61,8 +63,7 @@ def clean_text(text: str) -> str:
 
 
 _FILLER = frozenset(
-    "a an the and or of to in on at for is are was am be has have had my me i im i'm user users user's "
-    "their they them he she his her its it s that this named called".split()
+    ["a", "an", "the", "and", "or", "of", "to", "in", "on", "at", "for", "is", "are", "was", "am", "be", "has", "have", "had", "my", "me", "i", "im", "i'm", "user", "users", "user's", "their", "they", "them", "he", "she", "his", "her", "its", "it", "s", "that", "this", "named", "called"]
 )
 
 
@@ -163,7 +164,7 @@ def delete(conn: psycopg.Connection, memory_id: UUID) -> bool:
 
 
 def proposed_count(conn: psycopg.Connection) -> int:
-    return conn.execute("SELECT count(*) FROM memories WHERE status = 'proposed'").fetchone()[0]
+    return db.scalar(conn, "SELECT count(*) FROM memories WHERE status = 'proposed'")
 
 
 # ---------- extraction (proposals only) ----------

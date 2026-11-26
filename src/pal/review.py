@@ -161,7 +161,10 @@ def tick(pool) -> dict | None:
 
 def generate(conn: psycopg.Connection, today: date | None = None) -> dict:
     """Rebuild this week's digest now (no notification)."""
-    return _save(conn, week_start(today or local_now().date()), replace=True)
+    made = _save(conn, week_start(today or local_now().date()), replace=True)
+    if made is None:  # an upsert with DO UPDATE always returns its row
+        raise LookupError("digest was not saved")
+    return made
 
 
 def list_digests(conn: psycopg.Connection) -> list[dict]:

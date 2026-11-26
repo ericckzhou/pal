@@ -1,11 +1,12 @@
 """Documents API: upload files, add files/folders from this PC, list, delete. Owner session required (S2)."""
 
+import hashlib
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
-from . import ingest, pdf, reread
+from . import db, ingest, kept_uploads, pdf, reread
 from .api import require_owner, require_session
 from .work_api import _check_project
 
@@ -91,6 +92,10 @@ async def upload(request: Request, filename: str, project_id: UUID | None = None
         with request.app.state.pool.connection() as conn:
             # An upload is an explicit, single-file request, so an unchanged PDF is re-read if an older reader read it.
             doc, outcome = ingest.store(conn, filename, bytes(data), project_id=project_id, reread=True)
+        if doc["kind"] == "pdf":  # kept encrypted so a better PDF reader can re-read it later (kept_uploads.py)
+            digest = hashlib.sha256(data).digest()
+            if not kept_uploads.has(digest):
+                kept_uploads.keep(digest, bytes(data))
         return {"document": doc, "outcome": outcome}
 
     try:
@@ -172,7 +177,7 @@ def set_document_project(doc_id: UUID, body: ProjectBody, request: Request) -> d
         _check_project(conn, body.project_id)
         if not ingest.set_project(conn, doc_id, body.project_id):
             raise HTTPException(status_code=404, detail="Document not found")
-        return ingest.get(conn, doc_id)
+        return db.require(ingest.get(conn, doc_id), "document")
 
 
 @router.delete("/documents/{doc_id}", status_code=204)

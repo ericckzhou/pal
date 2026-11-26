@@ -1,6 +1,7 @@
 // Passkey ceremonies. The server sends WebAuthn options as JSON (binary fields base64url); the browser API wants
 // ArrayBuffers, and the server wants the credential back as JSON. Done by hand: older Safari lacks the JSON helpers.
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- WebAuthn JSON whose shape depends on the ceremony
 type Json = Record<string, any>;
 
 function fromB64url(s: string): ArrayBuffer {

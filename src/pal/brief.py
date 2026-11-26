@@ -9,6 +9,7 @@ from datetime import date, datetime, time, timedelta
 import psycopg
 from psycopg.types.json import Jsonb
 
+from . import db
 from .reminders import aware, local_now
 
 SENT_KEY = "brief_last_sent"  # app_settings; the local date of the last brief (not an editable setting)
@@ -16,7 +17,8 @@ SENT_KEY = "brief_last_sent"  # app_settings; the local date of the last brief (
 
 def build(conn: psycopg.Connection, today: date) -> dict:
     start = aware(datetime.combine(today, time()))
-    row = conn.execute(
+    row = db.one(
+        conn,
         """WITH open AS (  -- open tasks, leaving out archived projects (as the neglected-task scan does)
              SELECT t.* FROM tasks t LEFT JOIN projects p ON p.id = t.project_id
              WHERE t.status = 'open' AND (p.id IS NULL OR p.status = 'active'))
@@ -27,7 +29,7 @@ def build(conn: psycopg.Connection, today: date) -> dict:
              (SELECT count(*) FROM open WHERE stage = 'doing'),
              (SELECT title FROM open WHERE due_date <= %(today)s ORDER BY due_date, created_at LIMIT 1)""",
         {"today": today, "start": start, "end": start + timedelta(days=1)},
-    ).fetchone()
+    )
     return dict(zip(("overdue", "due_today", "reminders_today", "in_progress", "first"), row, strict=True))
 
 

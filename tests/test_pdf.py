@@ -210,8 +210,9 @@ def test_reread_can_be_stopped(db, tmp_path, monkeypatch, settings):
 
 def test_reuploading_an_old_pdf_rereads_it(authed, db, monkeypatch):
     data = make_pdf([["Quarterly numbers"]])
-    upload = lambda: authed.post("/api/documents/upload?filename=q.pdf", content=data,
-                                 headers={"Content-Type": "application/octet-stream"}).json()["outcome"]
+    def upload():
+        return authed.post("/api/documents/upload?filename=q.pdf", content=data,
+                           headers={"Content-Type": "application/octet-stream"}).json()["outcome"]
     assert upload() == "added"
     assert upload() == "unchanged"
     monkeypatch.setattr(pdf, "current_parser", lambda: pdf.PARSER_DOCLING)
@@ -234,8 +235,9 @@ def test_chunks_are_embedded_with_the_document_title(db, llm, monkeypatch):
 
 # ---------- the real thing, where Docling and its models are installed ----------
 
-def test_real_docling_reads_headings_and_pages():
+def test_real_docling_reads_headings_and_pages(monkeypatch):
     pytest.importorskip("docling")
+    monkeypatch.delenv("PAL_DATA_DIR")  # the models live in the owner's real data folder
     if not (pdf.models_dir().is_dir() and any(pdf.models_dir().iterdir())):
         pytest.skip("Docling models not downloaded (pal pdf-models)")
     _, blocks = pdf._docling("r.pdf", make_pdf(report_pages(3)))
@@ -247,3 +249,48 @@ def test_real_docling_reads_headings_and_pages():
     # A page whose only text sits where headers go is still kept, not dropped.
     _, blocks = pdf._docling("top.pdf", make_pdf([["Only line, at the very top"]] * 3))
     assert any("Only line" in b["text"] for b in blocks)
+
+
+# ---------- uploaded PDFs are kept encrypted so they can be re-read ----------
+
+def test_uploaded_pdf_is_kept_encrypted_and_deleted_with_its_document(authed, db):
+    import hashlib
+
+    from pal import kept_uploads
+
+    data = make_pdf([["Kept for later"]])
+    doc = authed.post("/api/documents/upload?filename=k.pdf", content=data,
+                      headers={"Content-Type": "application/octet-stream"}).json()["document"]
+    digest = hashlib.sha256(data).digest()
+    stored = kept_uploads.path_for(digest).read_bytes()
+    assert b"Kept for later" not in stored and stored.startswith(b"PALBK1")  # encrypted at rest
+    assert kept_uploads.load(digest) == data
+    assert authed.delete(f"/api/documents/{doc['id']}").status_code == 204
+    assert not kept_uploads.has(digest)
+
+
+def test_markdown_uploads_are_not_kept(authed):
+    from pal import kept_uploads
+
+    authed.post("/api/documents/upload?filename=n.md", content=b"# Notes\nhello",
+                headers={"Content-Type": "application/octet-stream"})
+    assert not kept_uploads.folder().exists() or not any(kept_uploads.folder().iterdir())
+
+
+def test_kept_upload_can_be_reread_and_old_uploads_cannot(authed, db, monkeypatch):
+    import hashlib
+
+    from pal import kept_uploads, reread
+
+    kept = make_pdf([["Kept upload"]])
+    authed.post("/api/documents/upload?filename=kept.pdf", content=kept,
+                headers={"Content-Type": "application/octet-stream"})
+    old = make_pdf([["Old upload"]])
+    authed.post("/api/documents/upload?filename=old.pdf", content=old,
+                headers={"Content-Type": "application/octet-stream"})
+    kept_uploads.discard(hashlib.sha256(old).digest())  # as if uploaded before pal kept copies
+    db.execute("UPDATE documents SET parser = 'older-reader'")
+    assert reread.stale(db) | {"bytes": 0} == {"files": 1, "bytes": 0, "uploads": 1, "parser": pdf.current_parser()}
+    rows, _ = reread._stale_rows(db)
+    assert reread._reread_one(authed.app.state.pool, rows[0]) is None
+    assert db.execute("SELECT parser FROM documents WHERE filename = 'kept.pdf'").fetchone()[0] == pdf.current_parser()

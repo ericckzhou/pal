@@ -20,7 +20,8 @@ export const atTime = (days: number, hour: number, minute = 0) => {
   return d.toISOString();
 };
 /** A local wall-clock time as a datetime-local value (YYYY-MM-DDTHH:MM), as the server sends drafted reminders. */
-export const localAt = (days: number, hour: number) => `${dateIn(days)}T${String(hour).padStart(2, "0")}:00`;
+export const localAt = (days: number, hour: number, minute = 0) =>
+  `${dateIn(days)}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 export { MIN, DAY };
 
 let seq = 1000;

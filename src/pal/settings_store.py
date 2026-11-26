@@ -5,6 +5,7 @@ here: they decide who can reach pal, so they stay in code and on the command lin
 """
 
 from dataclasses import dataclass, replace
+from typing import Any
 
 import psycopg
 from fastapi import FastAPI
@@ -38,6 +39,10 @@ FIELDS: tuple[Field, ...] = (
     Field("thinking", "Default thinking level", "model", "choice",
           "How much a model reasons before replying, for chats that don't pick their own (/think). Higher is "
           "slower; off replies straight away.", choices=LEVELS),
+    Field("rerank", "Check search results with the model", "model", "choice",
+          "Before a reply, the local model reads the matching memories and passages and drops the ones that "
+          "don't answer your question. Fewer unrelated citations; adds about half a second per message.",
+          choices=("on", "off")),
     Field("memory_idle_minutes", "Suggest memories after (minutes idle)", "memory", "int",
           "A chat this quiet counts as ended, and pal then suggests memories from it.", 5, 240, restart=True),
     Field("session_days", "Sign-in lasts (days)", "security", "int", "How long a sign-in on this PC stays valid.", 1, 365),
@@ -64,7 +69,7 @@ def load(conn: psycopg.Connection) -> dict:
 
 
 def apply(base: Settings, overrides: dict) -> Settings:
-    values = {k: tuple(v) if BY_KEY[k].kind == "models" else v for k, v in overrides.items() if k in BY_KEY}
+    values: dict[str, Any] = {k: tuple(v) if BY_KEY[k].kind == "models" else v for k, v in overrides.items() if k in BY_KEY}
     return replace(base, **values)
 
 
@@ -77,7 +82,8 @@ def validate(changes: dict, allowed: frozenset[str], installed: list[str] | None
         if field is None:
             raise SettingsError(f"{key} can't be changed here")
         if field.kind == "int":
-            if not isinstance(value, int) or isinstance(value, bool) or not field.minimum <= value <= field.maximum:
+            lo, hi = field.minimum or 0, field.maximum or 0  # every int field sets both
+            if not isinstance(value, int) or isinstance(value, bool) or not lo <= value <= hi:
                 raise SettingsError(f"{field.label} must be a whole number from {field.minimum} to {field.maximum}")
         elif field.kind == "models":
             if not isinstance(value, list) or not all(isinstance(m, str) and 0 < len(m) <= 100 for m in value):

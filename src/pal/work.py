@@ -6,6 +6,8 @@ from uuid import UUID
 import psycopg
 from psycopg.rows import dict_row
 
+from . import db
+
 PROJECT_COLS = "id, name, summary, status, created_at, updated_at"
 TASK_COLS = "t.id, t.project_id, p.name AS project, t.title, t.status, t.stage, t.due_date, t.created_at, t.done_at"
 NOTE_COLS = "n.id, n.project_id, p.name AS project, n.kind, n.text, n.created_at, n.updated_at"
@@ -120,11 +122,11 @@ def get_task(conn: psycopg.Connection, task_id: UUID) -> dict | None:
 
 def create_task(conn: psycopg.Connection, title: str, project_id: UUID | None = None, due_date: date | None = None,
                 conversation_id: UUID | None = None) -> dict:
-    task_id = conn.execute(
+    task_id = db.scalar(conn,
         "INSERT INTO tasks (title, project_id, due_date, source_conversation_id) VALUES (%s, %s, %s, %s) RETURNING id",
         (clean(title, 300), project_id, due_date, conversation_id),
-    ).fetchone()[0]
-    return get_task(conn, task_id)
+    )
+    return db.require(get_task(conn, task_id), "task")
 
 
 _UNSET = object()
@@ -171,12 +173,12 @@ def list_notes(conn: psycopg.Connection, project_id: UUID | None = None, kind: s
 
 
 def create_note(conn: psycopg.Connection, text: str, kind: str = "note", project_id: UUID | None = None) -> dict:
-    note_id = conn.execute(
+    note_id = db.scalar(conn,
         "INSERT INTO notes (text, kind, project_id) VALUES (%s, %s, %s) RETURNING id",
         (text.strip()[:5000], kind, project_id),
-    ).fetchone()[0]
-    return _one(conn, f"SELECT {NOTE_COLS} FROM notes n LEFT JOIN projects p ON p.id = n.project_id WHERE n.id = %s",
-                (note_id,))
+    )
+    return db.require(_one(conn, f"SELECT {NOTE_COLS} FROM notes n LEFT JOIN projects p ON p.id = n.project_id "
+                                 "WHERE n.id = %s", (note_id,)), "note")
 
 
 def update_note(conn: psycopg.Connection, note_id: UUID, *, text=None, kind=None) -> dict | None:

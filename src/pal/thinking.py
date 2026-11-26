@@ -8,6 +8,8 @@ from uuid import UUID
 
 import psycopg
 
+from . import db
+
 LEVELS = ("off", "low", "medium", "high")
 RESET_WORDS = ("default", "reset", "none")
 # Ollama models that take a named level for `think`; every other model takes true/false.
@@ -38,7 +40,7 @@ def claude_params(level: str) -> dict:
 
 def run(conn: psycopg.Connection, conv_id: UUID, arg: str, default: str) -> dict:
     """`/think`: show or set this chat's level. Returns {reply, thinking_changed, thinking}."""
-    current = conn.execute("SELECT thinking FROM conversations WHERE id = %s", (conv_id,)).fetchone()[0]
+    current = db.scalar(conn, "SELECT thinking FROM conversations WHERE id = %s", (conv_id,))
     arg = arg.strip().lower()
     if not arg:
         in_use = resolve(current, default)

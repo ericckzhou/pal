@@ -10,6 +10,7 @@ export class DemoError extends Error {
   }
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- request bodies of every demo route
 type Ctx = { m: string[]; q: URLSearchParams; body: any };
 type Handler = (c: Ctx) => unknown;
 

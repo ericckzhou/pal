@@ -526,6 +526,7 @@ button.board-card-title { display: block; width: 100%; text-align: left; border:
 /* Claude chats: clearly marked, because their text leaves the PC. */
 .cloud-banner { display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; margin: 0; padding: 0.45rem 0.9rem;
   border-bottom: 1px solid var(--line); background: color-mix(in srgb, #d97706 14%, var(--panel)); }
+.cloud-share { margin-left: auto; display: inline-flex; gap: 0.35rem; align-items: center; cursor: pointer; }
 .cloud-confirm { margin-top: 0.5rem; padding: 0.6rem; border: 1px solid #d97706; border-radius: 8px; background: var(--panel); }
 .cloud-confirm p { margin: 0 0 0.5rem; }
 .model-chip { margin-left: auto; display: inline-flex; gap: 0.3rem; align-items: center; padding: 0.15rem 0.5rem;

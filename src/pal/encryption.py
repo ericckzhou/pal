@@ -25,7 +25,7 @@ def parse(raw: str) -> str:
 
 
 def _drive() -> str:
-    return os.environ.get("SystemDrive", "C:")
+    return os.environ.get("SystemDrive", "C:")  # noqa: SIM112 (Windows spells it this way)
 
 
 def check() -> dict:

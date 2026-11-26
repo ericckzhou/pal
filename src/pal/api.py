@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 
-from . import actions, auth, claude, conversations, model_cmd, devices, memory, reminders, retrieval, thinking, work
+from . import actions, auth, claude, conversations, devices, memory, model_cmd, reminders, retrieval, thinking, work
 from .context import build_messages
 from .llm import LLMError
 
@@ -280,12 +280,14 @@ def post_message(conv_id: UUID, body: MessageBody, request: Request) -> Streamin
         past = claude.since_switch(conversations.history(conn, conv_id, with_model=True)) if cloud \
             else conversations.history(conn, conv_id)
         # Retrieve before saving a stated memory, so the reply isn't "about" the note it was just given.
-        if cloud:
-            items = []  # Claude gets only this chat's own text: no memories, documents, notes or project card
-        else:
+        if cloud and not conv.get("claude_context"):
+            items = []  # by default Claude gets only this chat's own text: no memories, documents, notes or project card
+        else:  # a local model, or a Claude chat whose owner opted in to sharing what matches (claude_context)
             focus = _project_item(conn, conv_id)
             focus_id = UUID(focus[0]["id"]) if focus else None
-            items = focus + retrieval.retrieve(conn, state.llm, _retrieval_query(past), conv_id, focus_id)
+            items = focus + retrieval.retrieve(
+                conn, state.llm, _retrieval_query(past), conv_id, focus_id, use_rerank=state.settings.rerank == "on"
+            )
         saved = None
         note = None
         stated = memory.parse_remember(body.content)

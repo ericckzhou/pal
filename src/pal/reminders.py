@@ -6,12 +6,13 @@ Times are stored as timestamptz. Repeats are computed in local wall-clock time f
 
 import logging
 from datetime import datetime, timedelta
+from typing import cast
 from uuid import UUID
 
 import psycopg
 from psycopg.rows import dict_row
 
-from . import when
+from . import db, when
 
 log = logging.getLogger("pal.reminders")
 
@@ -75,12 +76,12 @@ def create(
     if rrule:
         when.validate_rrule(rrule)
         due = when.first_occurrence(rrule, at, now) or at
-    reminder_id = conn.execute(
+    reminder_id = db.scalar(conn,
         """INSERT INTO reminders (title, due_at, rrule, anchor, project_id, task_id)
            VALUES (%s, %s, %s, %s, %s, %s) RETURNING id""",
         (" ".join(title.split())[:300], aware(due), rrule, at if rrule else None, project_id, task_id),
-    ).fetchone()[0]
-    return get(conn, reminder_id)
+    )
+    return db.require(get(conn, reminder_id), "reminder")
 
 
 def update(conn: psycopg.Connection, reminder_id: UUID, *, title=None, at: datetime | None = None,
@@ -88,7 +89,7 @@ def update(conn: psycopg.Connection, reminder_id: UUID, *, title=None, at: datet
     current = get(conn, reminder_id)
     if current is None:
         return None
-    new_rule = current["rrule"] if rrule is ... else rrule
+    new_rule = cast(str | None, current["rrule"] if rrule is ... else rrule)
     if new_rule:
         when.validate_rrule(new_rule)
     anchor = at or to_local(current["due_at"])
@@ -116,7 +117,7 @@ def set_paused(conn: psycopg.Connection, reminder_id: UUID, paused: bool, now: d
         now = now or local_now()
         if to_local(due) <= now:
             anchor = to_local(due)
-            row = conn.execute("SELECT anchor FROM reminders WHERE id = %s", (reminder_id,)).fetchone()
+            row = db.one(conn, "SELECT anchor FROM reminders WHERE id = %s", (reminder_id,))
             nxt = when.next_occurrence(current["rrule"], row[0] or anchor, now)
             due = aware(nxt) if nxt else due
     conn.execute("UPDATE reminders SET paused = %s, due_at = %s, updated_at = now() WHERE id = %s",

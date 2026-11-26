@@ -9,16 +9,31 @@ from dataclasses import replace
 
 import psycopg
 
+from . import secret_store
 from .config import Settings, dsn
 
 
 def check_loopback(host: str) -> None:
+    from .config import in_container
+
+    if in_container() and host == "0.0.0.0":
+        # Inside pal's container the port must be reachable from Docker's network; compose publishes it on the
+        # host's 127.0.0.1 only, so pal is still unreachable from other machines.
+        return
     try:
         ok = ipaddress.ip_address(host).is_loopback
     except ValueError:
         ok = host == "localhost"
     if not ok:
         raise SystemExit(f"Refusing to listen on {host}: pal only binds to loopback. Use Tailscale Serve for remote access.")
+
+
+def _local_services(settings: Settings) -> tuple[str, ...]:
+    """Hosts pal's own services run on when they aren't loopback (Docker service names such as "db", "ollama")."""
+    from urllib.parse import urlparse
+
+    hosts = {settings.db_host, urlparse(settings.ollama_url).hostname or ""}
+    return tuple(h for h in hosts if h and h not in ("127.0.0.1", "localhost", "::1"))
 
 
 def cmd_serve(settings: Settings) -> None:
@@ -42,7 +57,7 @@ def cmd_serve(settings: Settings) -> None:
         has_key = bool(claude.load_key())
     except Exception:
         has_key = False
-    egress.install(extra_hosts=(claude.API_HOST,) if has_key else ())
+    egress.install(extra_hosts=(claude.API_HOST,) if has_key else (), local_services=_local_services(settings))
     uvicorn.run(create_app(settings), host=settings.host, port=settings.port, log_level="info", proxy_headers=False)
 
 
@@ -93,7 +108,7 @@ def cmd_backup_key(show: bool, set_key: bool) -> None:
         except BackupKeyError as exc:
             raise SystemExit(str(exc)) from exc
         store_key(key)
-        print("Backup key saved to Credential Manager.")
+        print(f"Backup key saved to {secret_store.where()}.")
     elif show:
         print("Keep this somewhere safe and offline (a password manager or paper).")
         print("Without it, pal's backups can't be read on a reinstalled or different PC.")
@@ -101,7 +116,7 @@ def cmd_backup_key(show: bool, set_key: bool) -> None:
         print(encode_key(load_key()))
     else:
         load_key(create=False)
-        print("A backup key is stored in Credential Manager. Use --show to copy it somewhere safe.")
+        print(f"A backup key is stored in {secret_store.where()}. Use --show to copy it somewhere safe.")
 
 
 def cmd_claude_key(set_key: bool, clear: bool) -> None:
@@ -112,7 +127,7 @@ def cmd_claude_key(set_key: bool, clear: bool) -> None:
             claude.store_key(getpass.getpass("Paste the Anthropic API key: "))
         except ValueError as exc:
             raise SystemExit(str(exc)) from exc
-        print("Saved to Credential Manager. Restart pal, then pick a Claude model for a chat to use it.")
+        print(f"Saved to {secret_store.where()}. Restart pal, then pick a Claude model for a chat to use it.")
     elif clear:
         print("Removed. Restart pal." if claude.clear_key() else "No key was stored.")
     else:
@@ -190,7 +205,7 @@ def main() -> None:
     bk_mode.add_argument("--set", dest="set_key", action="store_true", help="save a key you stored earlier")
     ck = sub.add_parser("claude-key", help="check, set or remove the Anthropic API key (Claude chats)")
     ck_mode = ck.add_mutually_exclusive_group()
-    ck_mode.add_argument("--set", dest="set_key", action="store_true", help="paste a key (stored in Credential Manager)")
+    ck_mode.add_argument("--set", dest="set_key", action="store_true", help="paste a key (stored in the OS credential store)")
     ck_mode.add_argument("--clear", action="store_true", help="remove the stored key")
     dec = sub.add_parser("decrypt-backup", help="write a plain pg_dump from an encrypted backup (for pg_restore)")
     dec.add_argument("file")
@@ -206,7 +221,7 @@ def main() -> None:
     ing.add_argument("path")
     sub.add_parser("pdf-models", help="download Docling's layout/table/OCR models (one-time; better PDF reading)")
     args = parser.parse_args()
-    settings = Settings()
+    settings = Settings.from_env()
 
     if args.cmd == "serve":
         cmd_serve(settings)

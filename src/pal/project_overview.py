@@ -6,7 +6,7 @@ from uuid import UUID
 import psycopg
 from psycopg.rows import dict_row
 
-from . import reminders, work
+from . import db, reminders, work
 
 
 def _rows(conn: psycopg.Connection, sql: str, params: tuple) -> list[dict]:
@@ -25,9 +25,9 @@ def overview(conn: psycopg.Connection, project_id: UUID, today: date | None = No
     tasks = _rows(conn, """
         SELECT id, title, due_date, created_at FROM tasks WHERE project_id = %s AND status = 'open'
         ORDER BY due_date NULLS LAST, created_at""", pid)
-    done_week = conn.execute(
+    done_week = db.scalar(conn,
         "SELECT count(*) FROM tasks WHERE project_id = %s AND status = 'done' AND done_at > now() - interval '7 days'",
-        pid).fetchone()[0]
+        pid)
     # A reminder belongs to the project directly, or through the task it reminds about.
     scheduled = [reminders._with_repeat(r) for r in _rows(conn, """
         SELECT r.id, r.title, r.due_at, r.rrule, r.paused, t.title AS task
