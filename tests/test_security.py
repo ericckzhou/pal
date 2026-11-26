@@ -100,6 +100,42 @@ def test_s8_egress_guard_blocks_non_loopback():
     socket.getaddrinfo("127.0.0.1", 5432)  # loopback still allowed
 
 
+def test_s8_allowed_host_may_connect_to_the_addresses_it_resolved_to(monkeypatch):
+    """An allowed host (Claude's API) is named in the allowlist, but connect() receives the IP DNS returned."""
+    egress.install()
+    monkeypatch.setattr(egress, "_allowed_hosts", {"api.anthropic.com"})
+    monkeypatch.setattr(egress, "_allowed_ips", set())
+    fake = {"api.anthropic.com": "203.0.113.7", "example.com": "198.51.100.9"}  # documentation ranges, never routed
+    monkeypatch.setattr(egress, "_real_getaddrinfo",
+                        lambda host, *a, **k: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (fake[host], 443))])
+    assert not egress._is_allowed("203.0.113.7")  # not before the allowed name was looked up
+    socket.getaddrinfo("api.anthropic.com", 443)
+    assert egress._is_allowed("203.0.113.7")
+    with pytest.raises(egress.EgressBlocked):
+        socket.getaddrinfo("example.com", 443)
+    assert not egress._is_allowed("198.51.100.9")
+
+
+def test_s8_udp_and_legacy_lookups_are_guarded():
+    egress.install()
+    udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        with pytest.raises(egress.EgressBlocked):
+            udp.sendto(b"x", ("203.0.113.7", 53))
+        with pytest.raises(egress.EgressBlocked):
+            udp.sendto(b"x", 0, ("203.0.113.7", 53))
+        if hasattr(udp, "sendmsg"):  # not on Windows
+            with pytest.raises(egress.EgressBlocked):
+                udp.sendmsg([b"x"], [], 0, ("203.0.113.7", 53))
+        udp.sendto(b"x", ("127.0.0.1", 9))  # loopback still allowed
+    finally:
+        udp.close()
+    for lookup in (socket.gethostbyname, socket.gethostbyname_ex):
+        with pytest.raises(egress.EgressBlocked):
+            lookup("example.com")
+    assert socket.gethostbyname("localhost")
+
+
 TELEMETRY_DENYLIST = {
     "sentry-sdk", "posthog", "mixpanel", "segment-analytics-python", "analytics-python",
     "amplitude-analytics", "datadog", "ddtrace", "newrelic", "bugsnag", "rollbar", "logfire",
