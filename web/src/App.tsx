@@ -195,6 +195,7 @@ export default function App() {
             onAuthError={onAuthError}
             actions={{ onOpenConversation: open, onOpenMemory: () => showView("memory") }}
             newChatModel={newChatModel}
+            onNewChatModel={setNewChatModel}
             listVersion={listVersion}
             onToggleRail={() => setRailOpen((o) => !o)}
           />
@@ -205,14 +206,11 @@ export default function App() {
           activeId={activeId}
           version={listVersion}
           open={railOpen}
-          newChatModel={newChatModel}
-          onNewChatModel={setNewChatModel}
           onOpen={open}
           onDeleted={(id) => {
             if (id === activeId) open(null);
             changed();
           }}
-          onChanged={changed}
           onClose={() => setRailOpen(false)}
           onAuthError={onAuthError}
         />

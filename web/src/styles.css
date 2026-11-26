@@ -254,7 +254,15 @@ input.date { flex: 0 1 auto; width: auto; }
 .memory-item.revoked { opacity: 0.6; }
 p.alert { margin: 0; }
 code { font-family: var(--mono); font-size: 0.9em; overflow-wrap: anywhere; }
-.memory-add, .memory-edit { align-items: flex-start; }
+/* Add/edit rows mix text, date and select inputs with buttons: one shared height so they line up. */
+.memory-add, .memory-edit { align-items: center; }
+.memory-add :is(input, select, button, label.button), .memory-edit :is(input, select, button, label.button) {
+  height: 2.5rem;
+  padding-block: 0;
+  line-height: 1.2;
+}
+.memory-add select, .memory-edit select { padding-inline: 0.6rem; border-radius: 8px; }
+.memory-add label.button, .memory-edit label.button { display: inline-flex; align-items: center; }
 
 /* Scrollbars: slim accent-tinted thumb on a transparent track. */
 * { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--accent) 35%, transparent) transparent; }
@@ -530,8 +538,14 @@ button.board-card-title { display: block; width: 100%; text-align: left; border:
 .proc-row progress { flex: 1 1 10rem; max-width: 100%; height: 0.55rem; accent-color: var(--accent); }
 .proc-failed { margin: 0; padding-left: 1.1rem; max-height: 10rem; overflow: auto; overflow-wrap: anywhere; }
 
-.thinking-pick { margin-left: auto; }
-.thinking-pick + .model-chip { margin-left: 0.5rem; }
+/* Chat: model, thinking and project, just above the input */
+.chat-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 1rem; color: var(--muted);
+  padding: 0.5rem max(16px, calc((100% - 760px) / 2)) 0; border-top: 1px solid var(--line); background: var(--panel); }
+.chat-controls + .composer { border-top: none; }
+.chat-controls .picker { display: inline-flex; align-items: center; gap: 0.35rem; white-space: nowrap; }
+.chat-controls select { max-width: 14rem; }
+.chat-controls .model-pick { margin-left: auto; }
+.chat-controls .cloud-confirm { flex-basis: 100%; margin-top: 0; }
 .reasoning { margin: 0.25rem 0 0.5rem; border-left: 2px solid var(--line); padding-left: 0.6rem; }
 .reasoning summary { cursor: pointer; color: var(--muted); font-style: italic; }
 .reasoning-text { white-space: pre-wrap; color: var(--muted); max-height: 18rem; overflow-y: auto; margin-top: 0.3rem; }

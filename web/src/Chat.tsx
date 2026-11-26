@@ -2,6 +2,7 @@ import { KeyboardEvent, useEffect, useRef, useState } from "react";
 import { api, isClaude, Message, Project, Proposal, Step, streamReply, THINKING_LEVELS, ThinkingLevel } from "./api";
 import { num } from "./format";
 import { Icon } from "./Icon";
+import ModelPicker from "./ModelPicker";
 import { Markdown } from "./Markdown";
 import { ProposalCard } from "./Proposals";
 import { SourceActions, SourceList } from "./Sources";
@@ -15,6 +16,7 @@ type Props = {
   actions: SourceActions;
   workVersion: number;
   newChatModel: string | null;
+  onNewChatModel: (m: string | null) => void;
   listVersion: number;
   onToggleRail: () => void;
 };
@@ -60,7 +62,7 @@ function ReplyMeta({ m }: { m: Message }) {
 }
 
 export default function Chat({
-  convId, onCreated, onChanged, onWorkChanged, onAuthError, actions, workVersion, newChatModel, listVersion, onToggleRail,
+  convId, onCreated, onChanged, onWorkChanged, onAuthError, actions, workVersion, newChatModel, onNewChatModel, listVersion, onToggleRail,
 }: Props) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [proposals, setProposals] = useState<Proposal[]>([]);
@@ -192,6 +194,22 @@ export default function Chat({
     }
   };
 
+  const pickModel = async (value: string | null) => {
+    setError("");
+    if (!idRef.current) {
+      onNewChatModel(value); // a new chat applies it when it's created
+      return;
+    }
+    try {
+      await api.patchConversation(idRef.current, { model: value });
+      setModel(value);
+      onChanged(); // the chat list shows the new model
+    } catch (err) {
+      onAuthError(err);
+      setError(err instanceof Error ? err.message : "Could not change the model.");
+    }
+  };
+
   const changeThinking = async (value: string) => {
     const level = (value || null) as ThinkingLevel | null;
     setThinking(level);
@@ -233,31 +251,6 @@ export default function Chat({
         <button className="icon-btn rail-toggle" onClick={onToggleRail} aria-label="Show chats" title="Chats">
           <Icon name="rail" />
         </button>
-        {projects.length > 0 && (
-          <label>
-            Project{" "}
-            <select value={projectId} onChange={(e) => changeProject(e.target.value)} aria-label="This chat's project">
-              <option value="">None</option>
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-        <label className="thinking-pick" title="How much the model reasons before replying (/think)">
-          Thinking{" "}
-          <select value={thinking ?? ""} onChange={(e) => changeThinking(e.target.value)} aria-label="Thinking level">
-            <option value="">Default</option>
-            {THINKING_LEVELS.map((l) => (
-              <option key={l} value={l}>{l}</option>
-            ))}
-          </select>
-        </label>
-        <span className="model-chip" title="Switch with /model name, or in the chat list">
-          <Icon name="terminal" size={12} /> {model ?? "default model"}
-        </span>
       </div>
       {isClaude(model) && (
         <p className="cloud-banner small" role="status">
@@ -316,6 +309,31 @@ export default function Chat({
       </div>
       {error && <p className="error">{error}</p>}
       {notice && <p className="notice small">{notice}</p>}
+      <div className="chat-controls small">
+        {projects.length > 0 && (
+          <label className="picker">
+            Project{" "}
+            <select value={projectId} onChange={(e) => changeProject(e.target.value)} aria-label="This chat's project">
+              <option value="">None</option>
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        <label className="picker" title="How much the model reasons before replying (/think)">
+          Thinking{" "}
+          <select value={thinking ?? ""} onChange={(e) => changeThinking(e.target.value)} aria-label="Thinking level">
+            <option value="">Default</option>
+            {THINKING_LEVELS.map((l) => (
+              <option key={l} value={l}>{l}</option>
+            ))}
+          </select>
+        </label>
+        <ModelPicker value={model} onPick={pickModel} onAuthError={onAuthError} />
+      </div>
       <div className="composer">
         <textarea
           rows={2}
