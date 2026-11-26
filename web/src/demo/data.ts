@@ -128,6 +128,7 @@ export function seed(): DemoState {
     mem("m6", "Alex is the building manager at the new place.", "person", { project_id: P.move }),
     mem("m7", "Target half-marathon time is under 1:55.", "project", { project_id: P.marathon, origin: "inferred", status: "proposed", source_conversation_id: "c2", updated_at: ago(DAY) }),
     mem("m8", "Usually studies Spanish in the evening.", "fact", { origin: "inferred", status: "proposed", source_conversation_id: "c4", updated_at: ago(2 * DAY) }),
+    mem("m9", "Runs in the evenings now, after work.", "fact", { origin: "inferred", status: "proposed", source_conversation_id: "c2", updated_at: ago(DAY), replaces_id: "m2", replace_state: "suggested" }),
   ];
 
   const doc = (id: string, title: string, filename: string, kind: Doc["kind"], size: number, chunks: number, project_id: string | null, folder: string | null, days: number): Doc => ({

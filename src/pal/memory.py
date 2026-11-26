@@ -22,8 +22,13 @@ MAX_PROPOSALS_PER_SCAN = 8
 CONTEXT_BEFORE = 2  # already-scanned messages shown to the extractor for context
 COLUMNS = (
     "id, text, kind, origin, status, pinned, source_conversation_id, source_message_id, "
-    "created_at, updated_at, confirmed_at, project_id"
+    "created_at, updated_at, confirmed_at, project_id, replaces_id, replace_state"
 )
+_M_COLUMNS = ", ".join("m." + c.strip() for c in COLUMNS.split(","))
+# What a listed memory replaces (a suggestion only while the older one is still in use) and what replaced it.
+_LINKS = """CASE WHEN m.replace_state = 'applied' OR r.status = 'confirmed' THEN r.text END AS replaces_text,
+            (SELECT n.text FROM memories n WHERE n.replaces_id = m.id AND n.replace_state = 'applied'
+             ORDER BY n.updated_at DESC LIMIT 1) AS replaced_by_text"""
 _UNSET = object()
 PROJECT_KINDS = ("project", "decision")  # inferred memories of these kinds take the chat's focus project
 
@@ -63,7 +68,7 @@ def clean_text(text: str) -> str:
 
 
 _FILLER = frozenset(
-    ["a", "an", "the", "and", "or", "of", "to", "in", "on", "at", "for", "is", "are", "was", "am", "be", "has", "have", "had", "my", "me", "i", "im", "i'm", "user", "users", "user's", "their", "they", "them", "he", "she", "his", "her", "its", "it", "s", "that", "this", "named", "called"]
+    ["a", "an", "the", "and", "or", "of", "to", "in", "on", "at", "for", "is", "are", "was", "am", "be", "has", "have", "had", "my", "me", "i", "im", "i'm", "user", "users", "user's", "owner", "owners", "owner's", "their", "they", "them", "he", "she", "his", "her", "its", "it", "s", "that", "this", "named", "called"]
 )
 
 
@@ -111,17 +116,18 @@ def create(
 
 
 def list_memories(conn: psycopg.Connection, status: str, query: str = "", limit: int = 500) -> list[dict]:
+    base = f"SELECT {_M_COLUMNS}, {_LINKS} FROM memories m LEFT JOIN memories r ON r.id = m.replaces_id"
     if query.strip():
         return _rows(
             conn,
-            f"""SELECT {COLUMNS} FROM memories, websearch_to_tsquery('english', %s) q
-                WHERE status = %s AND (search @@ q OR text ILIKE '%%' || %s || '%%')
-                ORDER BY pinned DESC, updated_at DESC LIMIT %s""",
+            f"""{base}, websearch_to_tsquery('english', %s) q
+                WHERE m.status = %s AND (m.search @@ q OR m.text ILIKE '%%' || %s || '%%')
+                ORDER BY m.pinned DESC, m.updated_at DESC LIMIT %s""",
             (query, status, query, limit),
         )
     return _rows(
         conn,
-        f"SELECT {COLUMNS} FROM memories WHERE status = %s ORDER BY pinned DESC, updated_at DESC, id DESC LIMIT %s",
+        f"{base} WHERE m.status = %s ORDER BY m.pinned DESC, m.updated_at DESC, m.id DESC LIMIT %s",
         (status, limit),
     )
 

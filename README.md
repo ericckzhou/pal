@@ -18,7 +18,7 @@ You use pal in a web browser, either on the PC itself or on your phone or laptop
 
 **Chat.** Talk to a local AI model. When it answers, it can draw on what it remembers about you, your documents, your notes and earlier conversations, and it tells you where the information came from. When nothing you've stored fits the question, pal gives the model nothing, so it can't cite something unrelated. [How well this works is measured](eval/RETRIEVAL.md). You can set how much each chat "thinks" before it answers (off, low, medium or high).
 
-**Memory.** Say "remember that…" and pal saves the fact. After a conversation goes quiet, pal may also suggest a few things to remember. Nothing is saved until you say yes.
+**Memory.** Say "remember that…" and pal saves the fact. After a conversation goes quiet, pal may also suggest a few things to remember. Nothing is saved until you say yes. When something changes (a new job, a move), pal can suggest that the new memory replaces the old one. The old one is kept under Replaced, where you can restore it. pal also tells the model when each memory was saved, so newer facts win.
 
 **Documents.** Upload PDFs, Markdown or text files, or point pal at a folder. It reads them, including tables and scanned pages in PDFs, so you can ask questions about them later.
 

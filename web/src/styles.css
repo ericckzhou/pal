@@ -208,6 +208,11 @@ select { font: inherit; color: inherit; background: var(--panel); border: 1px so
 .memory-meta { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
 .memory-meta .spacer { flex: 1; }
 .memory-meta button { padding: 0.2rem 0.6rem; }
+.memory-link { margin: 0; overflow-wrap: anywhere; }
+.memory-link.suggestion { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; padding: 0.35rem 0.5rem;
+  border-radius: 8px; background: var(--warn-bg); color: var(--warn); }
+.memory-link.suggestion .spacer { flex: 1; }
+.memory-link.suggestion button { padding: 0.2rem 0.6rem; }
 .badge { border-radius: 999px; padding: 0 0.5rem; border: 1px solid var(--line); color: var(--muted); }
 .badge.stated { border-color: var(--accent); color: var(--accent); }
 

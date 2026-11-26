@@ -44,7 +44,7 @@ def get_conversation(conn: psycopg.Connection, conv_id: UUID) -> dict | None:
 def delete_conversation(conn: psycopg.Connection, conv_id: UUID) -> bool:
     """Unconfirmed proposals drawn from the conversation go with it; confirmed memories stay (source cleared)."""
     with conn.transaction():
-        conn.execute("DELETE FROM memories WHERE source_conversation_id = %s AND status <> 'confirmed'", (conv_id,))
+        conn.execute("DELETE FROM memories WHERE source_conversation_id = %s AND status = 'proposed'", (conv_id,))
         return conn.execute("DELETE FROM conversations WHERE id = %s", (conv_id,)).rowcount == 1
 
 

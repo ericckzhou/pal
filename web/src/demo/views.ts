@@ -69,7 +69,8 @@ export function overview(s: DemoState, id: string): ProjectOverview | null {
     },
     tasks: tasks.map((t) => ({ id: t.id, title: t.title, due_date: t.due_date, created_at: ago(7 * DAY) })),
     scheduled: reminders.map((r) => ({ id: r.id, title: r.title, due_at: r.due_at, rrule: r.rrule, repeat: r.repeat, paused: r.paused, task: null })),
-    memories: [...memories]
+    memories: memories
+      .filter((m): m is typeof m & { status: "proposed" | "confirmed" } => m.status !== "replaced")
       .sort((a, b) => (a.status === b.status ? 0 : a.status === "proposed" ? -1 : 1))
       .map((m) => ({ id: m.id, text: m.text, kind: m.kind, status: m.status, pinned: m.pinned, updated_at: m.updated_at })),
     documents: docs.map((d) => ({ id: d.id, title: d.title, filename: d.filename, kind: d.kind, size_bytes: d.size_bytes, updated_at: d.updated_at, pending: d.pending })),

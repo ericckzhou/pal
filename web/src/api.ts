@@ -57,12 +57,17 @@ export type Memory = {
   text: string;
   kind: MemoryKind;
   origin: "stated" | "inferred";
-  status: "proposed" | "confirmed";
+  status: MemoryStatus;
   pinned: boolean;
   source_conversation_id: string | null;
   updated_at: string;
   project_id: string | null;
+  replaces_id?: string | null;
+  replace_state?: "suggested" | "applied" | null; // suggested: pal thinks this makes an older memory out of date
+  replaces_text?: string | null; // the older memory's text (listings only)
+  replaced_by_text?: string | null; // for a replaced memory: what replaced it (listings only)
 };
+export type MemoryStatus = "proposed" | "confirmed" | "replaced";
 export type MemoryPatch = Partial<Pick<Memory, "text" | "kind" | "pinned" | "project_id">>;
 export type StreamEvent =
   | { type: "token"; text: string }
@@ -345,7 +350,7 @@ export const api = {
   create: () => call<Conversation>("/api/conversations", { method: "POST" }),
   get: (id: string) => call<Conversation & { messages: Message[] }>(`/api/conversations/${id}`),
   remove: (id: string) => call<void>(`/api/conversations/${id}`, { method: "DELETE" }),
-  memories: (status: "proposed" | "confirmed", q = "") =>
+  memories: (status: MemoryStatus, q = "") =>
     call<Memory[]>(`/api/memories?status=${status}&q=${encodeURIComponent(q)}`),
   inboxCount: () => call<{ count: number }>("/api/memories/inbox-count"),
   addMemory: (m: { text: string; kind: MemoryKind; pinned: boolean; project_id: string | null }) =>
@@ -354,6 +359,12 @@ export const api = {
     call<Memory>(`/api/memories/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
   confirmMemory: (id: string) => call<Memory>(`/api/memories/${id}/confirm`, { method: "POST" }),
   deleteMemory: (id: string) => call<void>(`/api/memories/${id}`, { method: "DELETE" }),
+  replaceMemory: (id: string, oldId: string) =>
+    call<Memory>(`/api/memories/${id}/replace`, { method: "POST", body: JSON.stringify({ old_id: oldId }) }),
+  replaceMemoryWith: (oldId: string, text: string) =>
+    call<Memory>(`/api/memories/${oldId}/replace-with`, { method: "POST", body: JSON.stringify({ text }) }),
+  restoreMemory: (id: string) => call<Memory>(`/api/memories/${id}/restore`, { method: "POST" }),
+  keepBothMemories: (id: string) => call<Memory>(`/api/memories/${id}/keep-both`, { method: "POST" }),
   suggestMemories: (convId: string) =>
     call<{ proposed: Memory[] }>(`/api/conversations/${convId}/suggest-memories`, { method: "POST" }),
   documents: () => call<Doc[]>("/api/documents"),

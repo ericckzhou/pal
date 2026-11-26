@@ -160,8 +160,37 @@ const routes: [string, RegExp, Handler][] = [
   // Memory.
   ["GET", /^memories$/, ({ q }) => {
     const needle = (q.get("q") ?? "").toLowerCase();
-    return state.memories.filter((x) => x.status === q.get("status") && (!needle || x.text.toLowerCase().includes(needle)));
+    const text = (id?: string | null) => state.memories.find((x) => x.id === id);
+    return state.memories
+      .filter((x) => x.status === q.get("status") && (!needle || x.text.toLowerCase().includes(needle)))
+      .map((x) => {
+        const old = text(x.replaces_id);
+        const shown = old && (x.replace_state === "applied" || old.status === "confirmed");
+        const by = state.memories.find((n) => n.replaces_id === x.id && n.replace_state === "applied");
+        return { ...x, replaces_text: shown ? old.text : null, replaced_by_text: by?.text ?? null };
+      });
   }],
+  ["POST", /^memories\/([\w-]+)\/replace$/, ({ m, body }) => {
+    setMemory(body.old_id, { status: "replaced" });
+    return setMemory(m[1], { status: "confirmed", replaces_id: body.old_id, replace_state: "applied" });
+  }],
+  ["POST", /^memories\/([\w-]+)\/replace-with$/, ({ m, body }) => {
+    const old = state.memories.find((x) => x.id === m[1]);
+    if (!old) throw new DemoError(404, "Memory not found");
+    const mem: Memory = {
+      ...old, id: newId(), text: body.text, origin: "stated", status: "confirmed", source_conversation_id: null,
+      updated_at: new Date().toISOString(), replaces_id: old.id, replace_state: "applied",
+    };
+    setMemory(old.id, { status: "replaced" });
+    state.memories = [mem, ...state.memories];
+    return mem;
+  }],
+  ["POST", /^memories\/([\w-]+)\/restore$/, ({ m }) => {
+    state.memories = state.memories.map((x) =>
+      x.replaces_id === m[1] && x.replace_state === "applied" ? { ...x, replaces_id: null, replace_state: null } : x);
+    return setMemory(m[1], { status: "confirmed" });
+  }],
+  ["POST", /^memories\/([\w-]+)\/keep-both$/, ({ m }) => setMemory(m[1], { replaces_id: null, replace_state: null })],
   ["GET", /^memories\/inbox-count$/, () => ({ count: state.memories.filter((x) => x.status === "proposed").length })],
   ["POST", /^memories$/, ({ body }) => {
     const mem: Memory = { id: newId(), origin: "stated", status: "confirmed", source_conversation_id: null, updated_at: new Date().toISOString(), ...body };

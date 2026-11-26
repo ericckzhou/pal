@@ -25,6 +25,7 @@ from . import (
     logbuffer,
     memory,
     memory_api,
+    memory_replace,
     reminders,
     review,
     review_api,
@@ -51,6 +52,9 @@ async def _memory_loop(app: FastAPI, idle_minutes: int) -> None:
             n = await asyncio.to_thread(memory.scan_idle, app.state.pool, app.state.llm, idle_minutes)
             if n:
                 log.info("proposed %d memories", n)
+            r = await asyncio.to_thread(memory_replace.check_pending, app.state.pool, app.state.llm)
+            if r:
+                log.info("suggested %d memory replacements", r)
         except Exception:
             log.exception("memory tick failed")
 

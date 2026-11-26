@@ -1,8 +1,13 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import { api, Memory, MemoryKind, MemoryPatch, Project } from "./api";
+import { api, Memory, MemoryKind, MemoryPatch, MemoryStatus, Project } from "./api";
 import ProjectSelect, { useProjects } from "./ProjectSelect";
 
 const KINDS: MemoryKind[] = ["fact", "preference", "person", "project", "decision"];
+const EMPTY: Record<MemoryStatus, string> = {
+  proposed: "No suggestions waiting.",
+  confirmed: "No memories yet. Try “remember that …” in a chat.",
+  replaced: "Nothing replaced yet.",
+};
 
 type Props = {
   embedded?: boolean; // shown as a tab inside Projects
@@ -13,7 +18,7 @@ type Props = {
 };
 
 export default function MemoryView({ embedded = false, projectId = null, onOpenConversation, onInboxChanged, onAuthError }: Props) {
-  const [tab, setTab] = useState<"proposed" | "confirmed">("proposed");
+  const [tab, setTab] = useState<MemoryStatus>("proposed");
   const [items, setItems] = useState<Memory[]>([]);
   const [query, setQuery] = useState("");
   const [error, setError] = useState("");
@@ -54,6 +59,9 @@ export default function MemoryView({ embedded = false, projectId = null, onOpenC
           <button role="tab" aria-selected={tab === "confirmed"} onClick={() => setTab("confirmed")}>
             Saved
           </button>
+          <button role="tab" aria-selected={tab === "replaced"} onClick={() => setTab("replaced")}>
+            Replaced
+          </button>
         </div>
       </header>
 
@@ -68,11 +76,14 @@ export default function MemoryView({ embedded = false, projectId = null, onOpenC
           pal suggests these after a conversation goes quiet. Nothing here is used until you accept it.
         </p>
       )}
+      {tab === "replaced" && (
+        <p className="muted small">Out-of-date memories. pal no longer uses them; restore one to put it back.</p>
+      )}
       {error && <p className="error">{error}</p>}
 
       <ul className="memory-list">
         {shown.length === 0 && (
-          <li className="muted">{tab === "proposed" ? "No suggestions waiting." : "No memories yet. Try “remember that …” in a chat."}</li>
+          <li className="muted">{EMPTY[tab]}</li>
         )}
         {shown.map((m) => (
           <MemoryItem
@@ -82,6 +93,10 @@ export default function MemoryView({ embedded = false, projectId = null, onOpenC
             onSave={(patch) => act(() => api.editMemory(m.id, patch))}
             onConfirm={() => act(() => api.confirmMemory(m.id))}
             onDelete={() => act(() => api.deleteMemory(m.id))}
+            onReplace={() => m.replaces_id && act(() => api.replaceMemory(m.id, m.replaces_id!))}
+            onKeepBoth={() => act(() => api.keepBothMemories(m.id))}
+            onReplaceWith={(text) => act(() => api.replaceMemoryWith(m.id, text))}
+            onRestore={() => act(() => api.restoreMemory(m.id))}
             onOpenConversation={onOpenConversation}
           />
         ))}
@@ -130,14 +145,21 @@ type ItemProps = {
   onSave: (patch: MemoryPatch) => void;
   onConfirm: () => void;
   onDelete: () => void;
+  onReplace: () => void;
+  onKeepBoth: () => void;
+  onReplaceWith: (text: string) => void;
+  onRestore: () => void;
   onOpenConversation: (id: string) => void;
 };
 
-function MemoryItem({ m, projects, onSave, onConfirm, onDelete, onOpenConversation }: ItemProps) {
-  const [editing, setEditing] = useState(false);
+function MemoryItem(props: ItemProps) {
+  const { m, projects, onSave, onConfirm, onDelete, onReplaceWith, onRestore, onOpenConversation } = props;
+  // "edit" fixes this memory in place; "update" saves a new version and moves this one to Replaced.
+  const [editing, setEditing] = useState<false | "edit" | "update">(false);
   const [text, setText] = useState(m.text);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const proposed = m.status === "proposed";
+  const replaced = m.status === "replaced";
 
   return (
     <li className={`memory-item ${m.pinned ? "pinned" : ""}`}>
@@ -146,7 +168,10 @@ function MemoryItem({ m, projects, onSave, onConfirm, onDelete, onOpenConversati
           className="memory-edit"
           onSubmit={(e) => {
             e.preventDefault();
-            if (text.trim()) onSave({ text: text.trim() });
+            const t = text.trim();
+            if (t && editing === "update" && t !== m.text) onReplaceWith(t);
+            else if (t && editing === "edit") onSave({ text: t });
+            setText(m.text);
             setEditing(false);
           }}
         >
@@ -159,9 +184,13 @@ function MemoryItem({ m, projects, onSave, onConfirm, onDelete, onOpenConversati
       ) : (
         <p className="memory-text">{m.text}</p>
       )}
+      {editing === "update" && <p className="muted small">The current text moves to Replaced, where you can restore it.</p>}
+      <ReplaceLink {...props} />
       <div className="memory-meta small">
-        <KindSelect value={m.kind} onChange={(kind) => onSave({ kind })} />
-        <ProjectSelect value={m.project_id} projects={projects} onChange={(project_id) => onSave({ project_id })} />
+        {!replaced && <KindSelect value={m.kind} onChange={(kind) => onSave({ kind })} />}
+        {!replaced && (
+          <ProjectSelect value={m.project_id} projects={projects} onChange={(project_id) => onSave({ project_id })} />
+        )}
         <span className={`badge ${m.origin}`} title={m.origin === "stated" ? "You said this" : "pal inferred this"}>
           {m.origin}
         </span>
@@ -171,12 +200,19 @@ function MemoryItem({ m, projects, onSave, onConfirm, onDelete, onOpenConversati
           </button>
         )}
         <span className="spacer" />
-        {proposed ? (
+        {replaced ? (
+          <>
+            <button className="small" onClick={onRestore} title="Use this memory again">
+              Restore
+            </button>
+            <DeleteButton confirming={confirmDelete} setConfirming={setConfirmDelete} onDelete={onDelete} />
+          </>
+        ) : proposed ? (
           <>
             <button className="primary small" onClick={onConfirm}>
               Accept
             </button>
-            <button className="small" onClick={() => setEditing(true)}>
+            <button className="small" onClick={() => setEditing("edit")}>
               Edit
             </button>
             <button className="small" onClick={onDelete}>
@@ -189,26 +225,62 @@ function MemoryItem({ m, projects, onSave, onConfirm, onDelete, onOpenConversati
               title="Pinned memories are in every conversation">
               {m.pinned ? "Unpin" : "Pin"}
             </button>
-            <button className="small" onClick={() => setEditing(true)}>
+            <button className="small" onClick={() => setEditing("edit")} title="Fix this memory in place">
               Edit
             </button>
-            {confirmDelete ? (
-              <>
-                <button className="danger small" onClick={onDelete}>
-                  Delete
-                </button>
-                <button className="small" onClick={() => setConfirmDelete(false)}>
-                  Keep
-                </button>
-              </>
-            ) : (
-              <button className="small" onClick={() => setConfirmDelete(true)}>
-                Delete
-              </button>
-            )}
+            <button className="small" onClick={() => setEditing("update")}
+              title="It changed: save a new version and keep this one under Replaced">
+              Update
+            </button>
+            <DeleteButton confirming={confirmDelete} setConfirming={setConfirmDelete} onDelete={onDelete} />
           </>
         )}
       </div>
     </li>
+  );
+}
+
+function DeleteButton({ confirming, setConfirming, onDelete }: {
+  confirming: boolean;
+  setConfirming: (v: boolean) => void;
+  onDelete: () => void;
+}) {
+  return confirming ? (
+    <>
+      <button className="danger small" onClick={onDelete}>
+        Delete
+      </button>
+      <button className="small" onClick={() => setConfirming(false)}>
+        Keep
+      </button>
+    </>
+  ) : (
+    <button className="small" onClick={() => setConfirming(true)}>
+      Delete
+    </button>
+  );
+}
+
+/** What this memory replaces (or might), or what replaced it. */
+function ReplaceLink({ m, onReplace, onKeepBoth }: ItemProps) {
+  if (m.status === "replaced") {
+    return m.replaced_by_text ? <p className="memory-link muted small">Replaced by “{m.replaced_by_text}”</p> : null;
+  }
+  if (!m.replaces_text) return null;
+  if (m.replace_state === "applied") {
+    return <p className="memory-link muted small">Replaces “{m.replaces_text}”</p>;
+  }
+  return (
+    <div className="memory-link suggestion small">
+      <span>May make this out of date: “{m.replaces_text}”</span>
+      <span className="spacer" />
+      <button className="primary small" onClick={onReplace}
+        title={m.status === "proposed" ? "Accept this and retire the older memory" : "Retire the older memory"}>
+        {m.status === "proposed" ? "Accept & replace" : "Replace"}
+      </button>
+      <button className="small" onClick={onKeepBoth} title="Both are true; keep using both">
+        Keep both
+      </button>
+    </div>
   );
 }

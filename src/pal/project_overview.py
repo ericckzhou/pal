@@ -35,7 +35,7 @@ def overview(conn: psycopg.Connection, project_id: UUID, today: date | None = No
         WHERE r.active AND (r.project_id = %s OR t.project_id = %s)
         ORDER BY r.paused, r.due_at LIMIT 50""", (project_id, project_id))]
     memories = _rows(conn, """
-        SELECT id, text, kind, status, pinned, updated_at FROM memories WHERE project_id = %s
+        SELECT id, text, kind, status, pinned, updated_at FROM memories WHERE project_id = %s AND status <> 'replaced'
         ORDER BY (status = 'proposed') DESC, pinned DESC, updated_at DESC LIMIT 50""", pid)
     documents = _rows(conn, """
         SELECT d.id, d.title, d.filename, d.kind, d.size_bytes, d.updated_at,
