@@ -234,7 +234,18 @@ def test_tailnet_status_parsing(monkeypatch):
     assert tailnet.detect_public_host() is None
 
 
-def test_pwa_manifest_and_icon_are_served(client):
+def test_pwa_manifest_and_icon_are_served(client, tmp_path, monkeypatch):
+    # CI runs the Python job without building the web UI, so serve a stand-in dist built from web/public.
+    import shutil
+
+    from pal import app as app_module
+
+    public = app_module.WEB_DIST.parent / "public"
+    for name in app_module.ROOT_FILES:
+        shutil.copy(public / name, tmp_path / name)
+    (tmp_path / "index.html").write_text("<!doctype html><title>pal</title>")
+    monkeypatch.setattr(app_module, "WEB_DIST", tmp_path)
+
     resp = client.get("/manifest.webmanifest")
     assert resp.status_code == 200 and resp.headers["content-type"].startswith("application/manifest+json")
     assert resp.json()["display"] == "standalone"
