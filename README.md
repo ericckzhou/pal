@@ -1,118 +1,195 @@
 # pal
 
-A private, local-first personal assistant. pal runs entirely on one Windows PC: a local LLM through Ollama, PostgreSQL with pgvector for storage and search, and a FastAPI server that also serves the React web UI. Nothing leaves the machine. Your phone or laptop reaches it through Tailscale.
+pal is a personal assistant that lives on your own Windows PC. You chat with it, and it remembers things for you, reads your documents, keeps track of your projects and tasks, and reminds you about things.
 
-## Features
+Everything runs on your machine: the AI model, the database and the web app. Your conversations, memories and files are not sent anywhere. The one exception is a Claude model, which you can choose for a single chat if you want; see [Privacy and security](#privacy-and-security).
 
-- **Chat** with a local model (default `qwen3.5:4b`). Answers can cite memories, documents, notes and past conversations.
-- **Memory**: say "remember that ..." to store a fact. pal also proposes memories after a conversation goes quiet, and nothing is saved until you confirm it.
-- **Documents**: add PDF, Markdown and text files by upload or with `pal ingest`. They're indexed for hybrid search (full-text plus vectors, merged with reciprocal-rank fusion).
-- **Work**: projects, tasks, notes and decisions. Each project has an overview page with its pending tasks, memories, documents and scheduled reminders.
-- **Reminders and notifications**: one-off or repeating. Repeats follow local wall-clock time, so they stay put across daylight-saving changes.
-- **Proposals**: the model can only *suggest* tasks and reminders. They're created when you confirm them or type a slash command yourself (`/task`, `/remind`, `/note`, `/decision`, `/project`).
-- **Dashboard**: status, sessions, schedule, analytics, logs and settings.
-- **Devices**: pair a phone or laptop with a one-time code and sign in with a passkey (WebAuthn).
+You use pal in a web browser, either on the PC itself or on your phone or laptop through Tailscale, a private network between your own devices.
 
-## Security model
+**[Try the demo →](https://pal-assistant-demo.vercel.app)** It's the real web app filled with made-up data. Nothing you type is saved, and no AI is running behind it.
 
-pal assumes the machine is trusted and everything else is not.
+## What it does
 
-- **Loopback only.** The server binds to `127.0.0.1:8765` and won't start on any other address. Remote access goes through Tailscale Serve, which provides HTTPS. pal ignores Tailscale identity headers, so every request still needs a pal session.
-- **No outbound network.** At startup, an egress guard patches `socket` so any non-loopback connection or DNS lookup fails.
-- **No secrets in files.** The database password is kept in Windows Credential Manager. The owner password is hashed with Argon2.
-- **Strict request checks.** Host and Origin allowlists, a required CSRF header (`x-pal-request`), and a strict CSP.
-- **Model output is never trusted.** Memories and actions the model produces stay proposals until you confirm them. Document text is passed to the model as data and never interpreted as instructions.
-- **Encrypted nightly backups.** `pg_dump` output is encrypted with AES-256-GCM before it's written to `%LOCALAPPDATA%\pal\backups` (outside the repo). The key is kept in Credential Manager. The 14 most recent are kept, and a restore check is available. Run `pal backup-key --show` once and store the key offline: without it, backups can't be read on a reinstalled PC.
+**Chat.** Talk to a local AI model. When it answers, it can draw on what it remembers about you, your documents, your notes and earlier conversations, and it tells you where the information came from. You can set how much each chat "thinks" before it answers (off, low, medium or high).
 
-## Requirements
+**Memory.** Say "remember that…" and pal saves the fact. After a conversation goes quiet, pal may also suggest a few things to remember. Nothing is saved until you say yes.
 
-- Windows 10/11 (the scripts and credential storage are Windows-specific)
-- Python 3.13 and [uv](https://docs.astral.sh/uv/)
-- Docker Desktop
-- [Ollama](https://ollama.com/) with `qwen3.5:4b` and `nomic-embed-text` pulled
-- Node.js and pnpm (only needed to build the web UI)
-- Tailscale (optional, for remote access)
+**Documents.** Upload PDFs, Markdown or text files, or point pal at a folder. It reads them, including tables and scanned pages in PDFs, so you can ask questions about them later.
 
-## Setup
+**Projects and tasks.** Keep projects, tasks, notes and decisions in one place. Each project has its own page with its open tasks, related memories and documents, and upcoming reminders.
+
+**Reminders.** Set one-off or repeating reminders. A reminder set for 9 a.m. stays at 9 a.m. when the clocks change.
+
+**You stay in charge.** The AI can *suggest* a task or a reminder, but it is only created once you confirm it. You can also create them yourself with `/task`, `/remind`, `/note`, `/decision` and `/project`.
+
+**Dashboard.** See status, sessions, your schedule, usage, logs and settings.
+
+**Your devices.** Pair a phone or laptop with a one-time code, then sign in with a passkey instead of typing a password.
+
+## Privacy and security
+
+pal treats the PC it runs on as trusted, and everything else as untrusted.
+
+- **Only reachable from your PC.** pal only accepts connections from the PC itself. Your other devices reach it through Tailscale, which adds encryption (HTTPS). Every device still has to sign in to pal.
+- **No internet access.** When pal starts, it blocks itself from connecting to the internet. There are two exceptions, and both are off unless you turn them on:
+  - **Claude chats.** If you save an Anthropic API key, you can pick a Claude model for a chat. Only that chat's messages are sent to Anthropic. Your memories, documents and notes are never sent.
+  - **PDF reader setup.** `pal pdf-models` downloads the PDF reader's models once. After that, reading PDFs works offline.
+- **No passwords in files.** The database password and API keys are kept in Windows Credential Manager. Your pal password is stored only as a secure hash.
+- **Protected against common web attacks.** pal checks where every request comes from and refuses anything unexpected.
+- **The AI can't act on its own.** Anything the AI produces (memories, tasks, reminders) waits for your approval. Text inside your documents is treated as content to read, never as instructions to follow.
+- **Encrypted nightly backups.** pal backs up its database every night, encrypts the backup and keeps the 14 most recent in `%LOCALAPPDATA%\pal\backups`.
+
+> **Important:** run `uv run pal backup-key --show` once and keep the key somewhere safe and offline. If you reinstall Windows without it, your backups can't be opened.
+
+## What you need
+
+- Windows 10 or 11
+- [Python 3.13](https://www.python.org/) and [uv](https://docs.astral.sh/uv/)
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/), for the database
+- [Ollama](https://ollama.com/), to run the AI models
+- [Node.js](https://nodejs.org/) and [pnpm](https://pnpm.io/), to build the web app
+- [Tailscale](https://tailscale.com/), only if you want to use pal from other devices
+
+## Getting started
+
+Run these from the project folder.
+
+**1. Download the AI models**
 
 ```sh
-# 1. Models
-ollama pull qwen3.5:4b
-ollama pull nomic-embed-text
+ollama pull qwen3.5:4b          # the chat model
+ollama pull nomic-embed-text    # used to search your documents and memories
+```
 
-# 2. Database (generates a password and stores it in Credential Manager on first run)
+**2. Start the database.** The first time, this creates a database password and saves it in Credential Manager.
+
+```sh
 uv run scripts/db.py up
+```
 
-# 3. Python dependencies and schema
+**3. Install pal and set up the database**
+
+```sh
 uv sync
 uv run pal migrate
+```
 
-# 4. Web UI
-cd web && pnpm install && pnpm build && cd ..
+**4. Build the web app**
 
-# 5. Owner password, then run
+```sh
+cd web
+pnpm install
+pnpm build
+cd ..
+```
+
+**5. Optional: better PDF reading.** This downloads the PDF reader's models once. Without them, pal uses a simpler reader.
+
+```sh
+uv run pal pdf-models
+```
+
+**6. Choose your password and start pal**
+
+```sh
 uv run pal set-password
 uv run pal serve
 ```
 
-Open http://127.0.0.1:8765.
+Then open **http://127.0.0.1:8765** in your browser.
 
-### Remote access
+### Using pal from your phone or laptop
+
+With Tailscale installed and signed in on the PC, run:
 
 ```sh
 tailscale serve --bg http://127.0.0.1:8765
 ```
 
-`pal serve` finds the tailnet name and accepts requests for it. To pair a device, use the Devices page, or `uv run pal pair --name Phone` if you're locked out of the UI.
+Then pair your device from the **Devices** page. If you can't get into the web app, you can make a pairing code from the command line instead:
 
-### Start at logon
+```sh
+uv run pal pair --name Phone
+```
+
+### Starting pal automatically
+
+To have pal start every time you sign in to Windows:
 
 ```powershell
 powershell -File scripts/install-autostart.ps1
 ```
 
-This registers a per-user scheduled task. At logon it starts Docker Desktop and Ollama, waits for the database to be healthy, then runs `pal serve`. Logs go to `%LOCALAPPDATA%\pal\logs\pal.log`. To remove it: `Unregister-ScheduledTask -TaskName pal -Confirm:$false`.
+This starts Docker and Ollama, waits for the database, then starts pal. Logs are written to `%LOCALAPPDATA%\pal\logs\pal.log`.
 
-## CLI
+To turn this off again:
 
-| Command | Purpose |
-|---|---|
-| `pal serve` | Run the server on 127.0.0.1:8765 (applies migrations first) |
-| `pal migrate` | Apply database migrations |
-| `pal set-password` | Set the owner password (signs out all sessions) |
-| `pal ingest <path>` | Add or refresh a file or folder of PDF/Markdown/text |
-| `pal backup [--check]` | Write a backup now; `--check` restores it into a scratch DB and compares row counts |
-| `pal backup-key [--show\|--set]` | Check, print (to store offline) or restore the backup encryption key |
-| `pal claude-key [--set\|--clear]` | Check, store or remove the Anthropic API key (Credential Manager). Restart pal after changing it. A chat uses Claude only when you pick a Claude model for it; only that chat's text is sent, never memories, documents or notes |
-| `pal decrypt-backup <file> <out>` | Write a plain dump from an encrypted backup, for a manual `pg_restore` |
-| `pal pair [--name] [--kind]` | Make a one-time pairing code for a device |
-| `pal devices` | List paired devices |
-| `pal revoke-device <name\|id>` | Revoke a device and end its sessions |
-| `pal revoke-sessions` | Sign out every device immediately |
-
-Run each command as `uv run pal <command>`.
-
-## Configuration
-
-Defaults are in [src/pal/config.py](src/pal/config.py) (port, Ollama URL, model, context size, session lifetime, backup retention, memory idle time). You can add other locally installed models on the Settings page. pal still only talks to Ollama on loopback.
-
-## Project layout
-
-```
-src/pal/        FastAPI app, CLI, and domain modules (chat, memory, retrieval, work, reminders, devices, ...)
-web/            React 19 + Vite UI, built to web/dist and served by the app
-migrations/     Ordered SQL migrations (applied by `pal migrate` / `pal serve`)
-scripts/        db.py (Postgres container), autostart PowerShell scripts
-eval/           Model comparison harness; see eval/RESULTS.md
-tests/          pytest suite (uses a real Postgres test database and a fake LLM)
-compose.yaml    pgvector/pgvector Postgres 18, published on 127.0.0.1 only
+```powershell
+Unregister-ScheduledTask -TaskName pal -Confirm:$false
 ```
 
-## Development
+### Using Claude (optional)
 
 ```sh
-uv run pytest                      # needs the database running; uses database "pal_test" (override with PAL_TEST_DB)
-uv run pytest --cov=pal
-cd web && pnpm watch               # rebuild the UI on change
-uv run eval/run.py --local         # local model evaluation, no network
+uv run pal claude-key --set
 ```
+
+Restart pal, and the Claude models show up in the model picker above the chat box. Chats that use a local model stay fully offline. To remove the key, run `uv run pal claude-key --clear`.
+
+## Commands
+
+Run each one as `uv run pal <command>`.
+
+| Command | What it does |
+|---|---|
+| `serve` | Start pal (it updates the database first if needed) |
+| `set-password` | Change your password. This signs out every device. |
+| `ingest <path>` | Add a file or folder of documents. Run it again to pick up changes. |
+| `pdf-models` | Download the PDF reader's models (once) |
+| `pair --name <name>` | Make a one-time code to pair a new device |
+| `devices` | List your paired devices |
+| `revoke-device <name>` | Remove a device and sign it out |
+| `revoke-sessions` | Sign out every device right now |
+| `backup` | Make a backup now. Add `--check` to also test that it restores correctly. |
+| `backup-key --show` | Show the backup key so you can store it safely. Use `--set` to restore it on a new install. |
+| `decrypt-backup <file> <out>` | Turn an encrypted backup back into a normal database dump |
+| `claude-key --set` / `--clear` | Save or remove your Anthropic API key |
+| `migrate` | Update the database structure (`serve` already does this) |
+
+## Settings
+
+You can change most things on the **Settings** page, such as which models are available and the default thinking level. Lower-level defaults like the port and backup retention are in [src/pal/config.py](src/pal/config.py).
+
+## For developers
+
+<details>
+<summary>How it's built, project layout, and running tests</summary>
+
+**Stack:** FastAPI (Python 3.13), PostgreSQL 18 with pgvector in Docker, Ollama for local models, and a React 19 + Vite web app. Search combines keyword search and vector search, merged with reciprocal-rank fusion. PDFs are read with Docling (layout, tables, OCR), with pypdf as a fallback.
+
+**Security details:** the server binds to `127.0.0.1:8765` only and ignores Tailscale identity headers. At startup an egress guard patches `socket` so that connections and DNS lookups to anything other than loopback fail; `api.anthropic.com` is allowed only when a Claude key is stored. Requests must pass Host and Origin allowlists and carry the `x-pal-request` CSRF header, and pages are served with a strict CSP. Passwords are hashed with Argon2, and backups are `pg_dump` output encrypted with AES-256-GCM.
+
+**Project layout**
+
+```
+src/pal/        Server, CLI, and features (chat, memory, retrieval, work, reminders, devices, ...)
+web/            The web app, built to web/dist and served by pal
+migrations/     Database migrations, applied in order
+scripts/        Database container helper and autostart scripts
+eval/           Model comparison tests; results in eval/RESULTS.md
+tests/          pytest suite (real Postgres test database, fake LLM)
+compose.yaml    The Postgres container, published on 127.0.0.1 only
+```
+
+**Tests and tools**
+
+```sh
+uv run pytest                  # needs the database running; uses "pal_test" (override with PAL_TEST_DB)
+uv run pytest --cov=pal        # with coverage
+cd web && pnpm watch           # rebuild the web app when files change
+cd web && pnpm build:demo      # a demo build of the web app with made-up data, in web/dist-demo
+bash scripts/deploy_demo.sh    # build the demo and publish it to pal-assistant-demo.vercel.app (needs the Vercel CLI)
+uv run eval/run.py --local     # compare local models, offline
+```
+
+</details>
