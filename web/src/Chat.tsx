@@ -6,6 +6,7 @@ import ModelPicker from "./ModelPicker";
 import { Markdown } from "./Markdown";
 import { ProposalCard } from "./Proposals";
 import { SourceActions, SourceList } from "./Sources";
+import { TracePanel } from "./Trace";
 
 type Props = {
   convId: string | null;
@@ -147,7 +148,7 @@ export default function Chat({
         } else if (ev.type === "done") {
           setMessages((m) => [
             ...m.slice(0, -1),
-            { ...m[m.length - 1], id: ev.message_id, model: ev.model, ...(ev.usage ?? {}) },
+            { ...m[m.length - 1], id: ev.message_id, model: ev.model, has_trace: ev.has_trace, ...(ev.usage ?? {}) },
           ]);
         } else if (ev.type === "memory_saved") {
           setNotice(`Saved to memory: “${ev.memory.text}”`);
@@ -306,6 +307,7 @@ export default function Chat({
                     {m.sources?.length ? (
                       <SourceList sources={m.sources} text={m.content} actions={actions} anchor={`${i}-`} />
                     ) : null}
+                    {m.has_trace && m.id ? <TracePanel messageId={m.id} /> : null}
                     <ReplyMeta m={m} />
                   </>
                 ) : (

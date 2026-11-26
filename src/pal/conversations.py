@@ -34,7 +34,8 @@ def get_conversation(conn: psycopg.Connection, conv_id: UUID) -> dict | None:
     conv = found[0]
     conv["messages"] = _rows(
         conn,
-        "SELECT id, role, content, model, sources, steps, prompt_tokens, completion_tokens, created_at FROM messages WHERE conversation_id = %s "
+        "SELECT id, role, content, model, sources, steps, prompt_tokens, completion_tokens, created_at, "
+        "retrieval_trace IS NOT NULL AS has_trace FROM messages WHERE conversation_id = %s "
         "ORDER BY created_at, id",
         (conv_id,),
     )
@@ -58,13 +59,15 @@ def add_message(
     *,
     steps: list[dict] | None = None,
     usage: dict | None = None,
+    trace: dict | None = None,
 ) -> UUID:
     usage = usage or {}
     msg_id = db.scalar(conn,
-        """INSERT INTO messages (conversation_id, role, content, model, sources, steps, prompt_tokens, completion_tokens)
-           VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+        """INSERT INTO messages (conversation_id, role, content, model, sources, steps, prompt_tokens, completion_tokens,
+                                 retrieval_trace)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
         (conv_id, role, content, model, Jsonb(sources) if sources else None, Jsonb(steps) if steps else None,
-         usage.get("prompt_tokens"), usage.get("completion_tokens")),
+         usage.get("prompt_tokens"), usage.get("completion_tokens"), Jsonb(trace) if trace else None),
     )
     title = " ".join(content.split())[:TITLE_LEN]
     if title.startswith("/"):  # a slash command makes a poor chat title; wait for a real message

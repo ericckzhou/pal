@@ -149,6 +149,17 @@ def get_conversation(conv_id: UUID, request: Request) -> dict:
     return conv
 
 
+@private.get("/messages/{message_id}/trace")
+def get_trace(message_id: UUID, request: Request) -> dict:
+    """Why a reply had the sources it had: candidate scores, reranker outcome, items trimmed for space."""
+    with request.app.state.pool.connection() as conn:
+        row = conn.execute("SELECT retrieval_trace FROM messages WHERE id = %s", (message_id,)).fetchone()
+        trace = row[0] if row else None
+        if not trace:
+            raise HTTPException(status_code=404, detail="No retrieval trace for this message")
+        return retrieval.trace_for_ui(conn, trace)
+
+
 @private.delete("/conversations/{conv_id}", status_code=204)
 def delete_conversation(conv_id: UUID, request: Request) -> Response:
     with request.app.state.pool.connection() as conn:
@@ -280,13 +291,16 @@ def post_message(conv_id: UUID, body: MessageBody, request: Request) -> Streamin
         past = claude.since_switch(conversations.history(conn, conv_id, with_model=True)) if cloud \
             else conversations.history(conn, conv_id)
         # Retrieve before saving a stated memory, so the reply isn't "about" the note it was just given.
+        trace: dict | None = None
         if cloud and not conv.get("claude_context"):
             items = []  # by default Claude gets only this chat's own text: no memories, documents, notes or project card
         else:  # a local model, or a Claude chat whose owner opted in to sharing what matches (claude_context)
             focus = _project_item(conn, conv_id)
             focus_id = UUID(focus[0]["id"]) if focus else None
+            trace = {}
             items = focus + retrieval.retrieve(
-                conn, state.llm, _retrieval_query(past), conv_id, focus_id, use_rerank=state.settings.rerank == "on"
+                conn, state.llm, _retrieval_query(past), conv_id, focus_id, use_rerank=state.settings.rerank == "on",
+                trace=trace,
             )
         saved = None
         note = None
@@ -308,6 +322,8 @@ def post_message(conv_id: UUID, body: MessageBody, request: Request) -> Streamin
         num_ctx = CLAUDE_CONTEXT if cloud else state.settings.num_ctx
         prompt, used = build_messages(past, num_ctx, state.settings.answer_reserve, items, note)
         sources = retrieval.public_sources(used)
+        if trace:
+            trace = retrieval.mark_trimmed(trace, used)
     steps = _steps(sources, saved, proposal)
 
     def generate() -> Iterator[str]:
@@ -337,9 +353,10 @@ def post_message(conv_id: UUID, body: MessageBody, request: Request) -> Streamin
             return
         with state.pool.connection() as conn:
             msg_id = conversations.add_message(
-                conn, conv_id, "assistant", reply, model, sources or None, steps=steps or None, usage=usage
+                conn, conv_id, "assistant", reply, model, sources or None, steps=steps or None, usage=usage,
+                trace=trace,
             )
-        yield _event(type="done", message_id=msg_id, model=model, usage=usage)
+        yield _event(type="done", message_id=msg_id, model=model, usage=usage, has_trace=bool(trace))
         if proposal:
             yield _event(type="proposal", proposal=proposal)
 

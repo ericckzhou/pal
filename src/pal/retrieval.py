@@ -4,6 +4,10 @@ Per source: a full-text list (any query word) and a vector list (nomic-embed-tex
 with reciprocal-rank fusion. Weak matches are dropped, so retrieval can, and often should, return nothing.
 Pinned memories are always included. Every item gets a citation handle: m1.. memories, d1.. documents,
 n1.. notes and decisions, c1.. past conversations.
+
+A caller can pass `trace={}` to get a decision trace: each candidate's ranks, similarity and fused score, what the
+reranker kept or dropped, and whether it fell back. The trace holds ids and numbers, never item text, so deleting a
+memory or document still removes its words everywhere (it is stored with the reply; see trace_for_ui).
 """
 
 import logging
@@ -28,6 +32,8 @@ RRF_K = 60
 PROJECT_BOOST = 1.5  # fused score multiplier for items in the chat's focus project (ranks higher, never filters)
 SNIPPET = 300
 ITEM_CHARS = 1500
+TRACE_MAX = 20  # fused candidates recorded per reply (the reranker reads at most rerank.POOL of them)
+TRACE_VERSION = 1
 
 # Each source: (kind, handle prefix, SQL returning id/title/text/extra columns + sim, with {where} for filters)
 _SOURCES = {
@@ -71,7 +77,8 @@ def _query_vector(llm, text: str) -> str | None:
 
 
 def _search(
-    conn: psycopg.Connection, kind: str, query: str, qvec: str | None, conv_id: UUID | None
+    conn: psycopg.Connection, kind: str, query: str, qvec: str | None, conv_id: UUID | None,
+    cut: dict[str, int] | None = None,
 ) -> list[list[dict]]:
     _, sql = _SOURCES[kind]
     a = _ALIAS[kind]
@@ -84,7 +91,8 @@ def _search(
     )
     with conn.cursor(row_factory=dict_row) as cur:
         fts = cur.execute(fts_sql, params).fetchall()
-        vec = []
+        vec: list[dict] = []
+        found: list[dict] = []
         if qvec:
             # HNSW + a WHERE filter (confirmed memories, other chats) could otherwise return fewer than `n` rows:
             # iterative scan keeps walking the index until enough rows pass the filter, in exact distance order.
@@ -93,9 +101,14 @@ def _search(
                 sql.format(sim=sim, where=f"{a}embedding IS NOT NULL")
                 + f" ORDER BY {a}embedding <=> %(qvec)s::vector LIMIT %(n)s"
             )
-            vec = [r for r in cur.execute(vec_sql, params).fetchall() if r["sim"] >= VEC_MIN]
+            found = cur.execute(vec_sql, params).fetchall()
+            vec = [r for r in found if r["sim"] >= VEC_MIN]
     # A keyword-only hit must still be somewhat related in meaning (when we can tell).
-    fts = [r for r in fts if r["sim"] is None or r["sim"] >= FTS_VEC_MIN]
+    kept_fts = [r for r in fts if r["sim"] is None or r["sim"] >= FTS_VEC_MIN]
+    if cut is not None:
+        cut["keyword"] = cut.get("keyword", 0) + len(fts) - len(kept_fts)
+        cut["vector"] = cut.get("vector", 0) + len(found) - len(vec)
+    fts = kept_fts
     for r in fts + vec:
         r["kind"] = kind
     return [fts, vec]
@@ -103,37 +116,48 @@ def _search(
 
 def retrieve(
     conn: psycopg.Connection, llm, query: str, conv_id: UUID | None = None, project_id: UUID | None = None,
-    use_rerank: bool | None = None,
+    use_rerank: bool | None = None, trace: dict | None = None,
 ) -> list[dict]:
     """Return context items: pinned memories first, then the best fused matches. Each has a `handle`.
 
     Items tagged with `project_id` (the chat's focus project) get a score boost; untagged items still compete.
     With `use_rerank` (Settings > Search), the local model reads the top fused candidates and drops the ones that
-    don't answer the question (rerank.py).
+    don't answer the question (rerank.py). Pass `trace={}` to have it filled with the decision trace.
     """
     use_rerank = rerank.ENABLED if use_rerank is None else use_rerank
     query = query.strip()
     qvec = _query_vector(llm, query) if query else None
     scores: dict[tuple[str, UUID], float] = {}
     rows: dict[tuple[str, UUID], dict] = {}
+    ranks: dict[tuple[str, UUID], dict[str, int]] = {}
+    cut: dict[str, int] = {"keyword": 0, "vector": 0}
     if query:
         for kind in _SOURCES:
-            for ranked in _search(conn, kind, query, qvec, conv_id):
+            for list_name, ranked in zip(("keyword", "vector"), _search(conn, kind, query, qvec, conv_id, cut), strict=True):
                 for rank, r in enumerate(ranked):
                     key = (kind, r["id"])
                     scores[key] = scores.get(key, 0.0) + 1.0 / (RRF_K + rank + 1)
                     rows[key] = r
+                    ranks.setdefault(key, {})[list_name] = rank + 1
+    boosted = set()
     if project_id is not None:
         for key, r in rows.items():
             if r.get("project_id") == project_id:
                 scores[key] *= PROJECT_BOOST
+                boosted.add(key)
     order = sorted(scores, key=lambda k: scores[k], reverse=True)
+    rerank_info: dict = {"status": "off"}
+    dropped: set = set()
     if use_rerank and order:
         pool = order[: rerank.POOL]
-        kept = rerank.rerank(llm, query, [dict(rows[k], key=k) for k in pool])
+        kept, fell_back = rerank.rerank_checked(llm, query, [dict(rows[k], key=k) for k in pool])
         best = [c["key"] for c in kept][:MAX_ITEMS]
+        dropped = set(pool) - {c["key"] for c in kept}
+        rerank_info = {"status": "fell_back" if fell_back else "ran", "pool": len(pool), "kept": len(kept)}
     else:
         best = order[:MAX_ITEMS]
+        if use_rerank:
+            rerank_info = {"status": "no_candidates"}
 
     with conn.cursor(row_factory=dict_row) as cur:
         pinned = cur.execute(
@@ -164,7 +188,66 @@ def retrieve(
             "at": item["at"].date().isoformat() if item["at"] else None,
             "pinned": item["pinned"],
         })
+    if trace is not None:
+        handles = {(o["kind"], o["id"]): o["handle"] for o in out}
+        candidates: list[dict] = [
+            {"kind": "memory", "id": str(r["id"]), "pinned": True, "handle": handles[("memory", str(r["id"]))],
+             "decision": "used"}
+            for r in pinned
+        ]
+        chosen = set(best)
+        for key in order[:TRACE_MAX]:
+            sim = rows[key]["sim"]
+            entry = {
+                "kind": key[0], "id": str(key[1]), "score": round(scores[key], 5),
+                "keyword_rank": ranks[key].get("keyword"), "vector_rank": ranks[key].get("vector"),
+                "sim": round(sim, 3) if sim is not None else None, "boosted": key in boosted,
+                "decision": "used" if key in chosen else "reranker_dropped" if key in dropped else "ranked_lower",
+            }
+            if key in chosen:
+                entry["handle"] = handles[(key[0], str(key[1]))]
+            candidates.append(entry)
+        trace.update({
+            "v": TRACE_VERSION, "query": query, "vector_search": qvec is not None,
+            "cutoffs": {"vec_min": VEC_MIN, "fts_vec_min": FTS_VEC_MIN}, "below_cutoff": cut,
+            "fused": len(order), "rerank": rerank_info, "candidates": candidates,
+        })
     return out
+
+
+def mark_trimmed(trace: dict, used: list[dict]) -> dict:
+    """Items retrieve() picked that build_messages left out for space: 'used' becomes 'trimmed'."""
+    sent = {u["handle"] for u in used}
+    candidates = [
+        dict(c, decision="trimmed") if c["decision"] == "used" and c.get("handle") not in sent else c
+        for c in trace.get("candidates", [])
+    ]
+    return dict(trace, candidates=candidates)
+
+
+_LABEL_SQL = {
+    "memory": "SELECT id, left(text, 120) AS label FROM memories WHERE id = ANY(%s)",
+    "document": """SELECT c.id, d.title || coalesce(' › ' || c.heading, '') || coalesce(', p.' || c.page, '') AS label
+                   FROM chunks c JOIN documents d ON d.id = c.document_id WHERE c.id = ANY(%s)""",
+    "note": "SELECT id, left(text, 120) AS label FROM notes WHERE id = ANY(%s)",
+    "conversation": """SELECT m.id, cv.title AS label FROM messages m JOIN conversations cv ON cv.id = m.conversation_id
+                       WHERE m.id = ANY(%s)""",
+}
+
+
+def trace_for_ui(conn: psycopg.Connection, trace: dict) -> dict:
+    """Add a current label to each candidate (None once the item is deleted); the stored trace has no text."""
+    by_kind: dict[str, list[UUID]] = {}
+    for c in trace.get("candidates", []):
+        if c["kind"] in _LABEL_SQL:
+            by_kind.setdefault(c["kind"], []).append(UUID(c["id"]))
+    labels: dict[tuple[str, str], str] = {}
+    with conn.cursor(row_factory=dict_row) as cur:
+        for kind, ids in by_kind.items():
+            for r in cur.execute(_LABEL_SQL[kind], (ids,)).fetchall():
+                labels[(kind, str(r["id"]))] = " ".join((r["label"] or "").split())
+    candidates = [dict(c, label=labels.get((c["kind"], c["id"]))) for c in trace.get("candidates", [])]
+    return dict(trace, candidates=candidates)
 
 
 def public_sources(items: list[dict]) -> list[dict]:

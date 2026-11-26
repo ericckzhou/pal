@@ -22,6 +22,30 @@ export type Source = {
   at: string | null;
   pinned: boolean;
 };
+export type TraceDecision = "used" | "trimmed" | "reranker_dropped" | "ranked_lower";
+export type TraceCandidate = {
+  kind: Source["kind"];
+  id: string;
+  label: string | null; // null once the item has been deleted
+  decision: TraceDecision;
+  handle?: string;
+  pinned?: boolean;
+  score?: number;
+  keyword_rank?: number | null;
+  vector_rank?: number | null;
+  sim?: number | null;
+  boosted?: boolean;
+};
+export type RetrievalTrace = {
+  v: number;
+  query: string;
+  vector_search: boolean;
+  cutoffs: { vec_min: number; fts_vec_min: number };
+  below_cutoff: { keyword: number; vector: number };
+  fused: number;
+  rerank: { status: "off" | "ran" | "fell_back" | "no_candidates"; pool?: number; kept?: number };
+  candidates: TraceCandidate[];
+};
 export type Step = { kind: "retrieval" | "memory" | "proposal" | "command"; label: string; detail: string | null };
 export type Usage = { prompt_tokens?: number | null; completion_tokens?: number | null };
 export type Message = {
@@ -35,6 +59,7 @@ export type Message = {
   prompt_tokens?: number | null;
   completion_tokens?: number | null;
   created_at?: string;
+  has_trace?: boolean; // a retrieval decision trace is stored (GET /api/messages/{id}/trace)
 };
 export type Doc = {
   id: string;
@@ -75,7 +100,7 @@ export type StreamEvent =
   | { type: "thinking_changed"; thinking: ThinkingLevel | null }
   | { type: "memory_saved"; memory: Memory }
   | { type: "sources"; sources: Source[] }
-  | { type: "done"; message_id: string; model?: string; usage?: Usage }
+  | { type: "done"; message_id: string; model?: string; usage?: Usage; has_trace?: boolean }
   | { type: "step"; step: Step }
   | { type: "proposal"; proposal: Proposal }
   | { type: "work_changed" }
@@ -350,6 +375,7 @@ export const api = {
   create: () => call<Conversation>("/api/conversations", { method: "POST" }),
   get: (id: string) => call<Conversation & { messages: Message[] }>(`/api/conversations/${id}`),
   remove: (id: string) => call<void>(`/api/conversations/${id}`, { method: "DELETE" }),
+  trace: (messageId: string) => call<RetrievalTrace>(`/api/messages/${messageId}/trace`),
   memories: (status: MemoryStatus, q = "") =>
     call<Memory[]>(`/api/memories?status=${status}&q=${encodeURIComponent(q)}`),
   inboxCount: () => call<{ count: number }>("/api/memories/inbox-count"),

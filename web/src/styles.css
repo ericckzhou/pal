@@ -230,6 +230,18 @@ a.cite { display: inline-block; font-size: 0.75rem; line-height: 1.2; padding: 0
 .source-body p { margin: 0 0 0.3rem; overflow-wrap: anywhere; }
 .source:target .source-head { color: var(--accent); }
 .sources > button.link { justify-self: start; padding-left: 0; }
+.trace { margin-top: 0.35rem; color: var(--muted); }
+.trace summary { cursor: pointer; }
+.trace p { margin: 0.3rem 0; }
+.trace-table { overflow-x: auto; }
+.trace table { border-collapse: collapse; font-size: 0.75rem; width: 100%; }
+.trace th, .trace td { padding: 0.15rem 0.4rem; text-align: left; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.trace td.num { text-align: right; font-family: var(--mono); }
+.trace td.trace-label { white-space: normal; min-width: 12rem; overflow-wrap: anywhere; color: var(--text); }
+.trace .cite { background: var(--user); color: var(--accent); border-radius: 6px; padding: 0 0.35rem; }
+.trace tr.trace-used td { color: inherit; }
+.trace tr.trace-reranker_dropped td, .trace tr.trace-ranked_lower td { opacity: 0.7; }
+.trace tr.trace-trimmed td:last-child { color: var(--warn); }
 
 .section { margin: 0.6rem 0 0; font-weight: 600; font-size: 1rem; }
 input.date { flex: 0 1 auto; width: auto; }

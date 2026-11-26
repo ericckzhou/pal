@@ -31,8 +31,13 @@ PROMPT = (
 
 def rerank(llm, query: str, candidates: list[dict]) -> list[dict]:
     """Candidates in the model's order, irrelevant ones dropped. On any failure, the input unchanged."""
+    return rerank_checked(llm, query, candidates)[0]
+
+
+def rerank_checked(llm, query: str, candidates: list[dict]) -> tuple[list[dict], bool]:
+    """Like `rerank`, plus whether it fell back to the input order because the model call failed."""
     if not candidates:
-        return candidates
+        return candidates, False
     listing = "\n".join(
         f"[{i}] {' '.join((c.get('title') or '').split())}: {' '.join(c['text'].split())[:CHARS]}"
         for i, c in enumerate(candidates, start=1)
@@ -47,10 +52,10 @@ def rerank(llm, query: str, candidates: list[dict]) -> list[dict]:
             raise ValueError("relevant is not a list")
     except Exception:
         log.warning("rerank failed; keeping the fused order", exc_info=True)
-        return candidates
+        return candidates, True
     out, seen = [], set()
     for n in picked:
         if isinstance(n, int) and 1 <= n <= len(candidates) and n not in seen:
             seen.add(n)
             out.append(candidates[n - 1])
-    return out
+    return out, False
