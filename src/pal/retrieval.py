@@ -34,7 +34,7 @@ _SOURCES = {
     "memory": (
         "m",
         """SELECT id, NULL::text AS title, text, NULL::uuid AS conversation_id, NULL::uuid AS document_id,
-                  NULL::int AS page, NULL::timestamptz AS at, project_id, {sim} AS sim
+                  NULL::int AS page, updated_at AS at, project_id, {sim} AS sim
            FROM memories WHERE status = 'confirmed' AND NOT pinned AND {where}""",
     ),
     "document": (
@@ -138,7 +138,7 @@ def retrieve(
     with conn.cursor(row_factory=dict_row) as cur:
         pinned = cur.execute(
             """SELECT id, NULL::text AS title, text, NULL::uuid AS conversation_id, NULL::uuid AS document_id,
-                      NULL::int AS page, NULL::timestamptz AS at, 'memory' AS kind
+                      NULL::int AS page, updated_at AS at, 'memory' AS kind
                FROM memories WHERE status = 'confirmed' AND pinned ORDER BY updated_at DESC LIMIT %s""",
             (MAX_PINNED,),
         ).fetchall()

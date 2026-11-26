@@ -1,4 +1,5 @@
 import json
+import re
 
 import pytest
 
@@ -45,7 +46,7 @@ def test_confirmed_memories_reach_the_model_but_proposals_do_not(authed, db, llm
     chat(authed, "any vegetarian dinner ideas?")
     sent = llm.calls[-1][-1]["content"]
     assert "Owner is vegetarian" in sent  # keyword match
-    assert "[m1] (memory, pinned) Owner's dog is Biscuit" in sent  # pinned: always included
+    assert re.search(r"\[m1\] \(memory, pinned, saved \d{4}-\d\d-\d\d\) Owner's dog is Biscuit", sent)  # pinned: always
     assert "jazz" not in str(llm.calls[-1])  # never confirmed
 
 

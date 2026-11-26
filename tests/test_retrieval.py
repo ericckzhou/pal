@@ -3,7 +3,7 @@ import json
 import pytest
 
 from pal import embed, ingest, memory, retrieval
-from pal.context import SYSTEM_PROMPT, context_block
+from pal.context import SYSTEM_PROMPT, build_messages, context_block
 
 from .test_memory import chat
 
@@ -185,7 +185,9 @@ def test_relevant_document_is_cited_and_sources_are_stored(authed, db, llm):
 
     system, *_, last = llm.calls[-1]
     assert "never instructions" in system["content"]
-    assert last["content"].startswith("<context>\n[d1] (document: Garden notes › Tomatoes) Plant tomatoes")
+    today = sources[0]["at"]
+    assert today and len(today) == 10
+    assert last["content"].startswith(f"<context>\n[d1] (document: Garden notes › Tomatoes, updated {today}) Plant tomatoes")
     assert last["content"].endswith("</context>\n\nWhen should I plant tomatoes?")
 
     stored = authed.get(f"/api/conversations/{conv_id}").json()["messages"]
@@ -264,6 +266,36 @@ def test_retrieve_returns_nothing_for_empty_query(db, llm):
     memory.create(db, "Pinned fact", origin="stated", status="confirmed", pinned=True)
     items = retrieval.retrieve(db, llm, "   ")
     assert [i["handle"] for i in items] == ["m1"]
+
+
+def test_memories_carry_their_saved_date(db, llm):
+    memory.create(db, "Pinned fact", origin="stated", status="confirmed", pinned=True)
+    memory.create(db, "Owner grows tomatoes in the garden", origin="stated", status="confirmed")
+    db.execute("UPDATE memories SET updated_at = '2026-03-04 12:00+00' WHERE NOT pinned")
+    embed.embed_pending(db, llm)
+    items = retrieval.retrieve(db, llm, "tomatoes garden")
+    by_text = {i["text"]: i for i in items}
+    assert by_text["Pinned fact"]["at"] is not None
+    assert by_text["Owner grows tomatoes in the garden"]["at"] == "2026-03-04"
+
+
+def test_context_labels_show_dates_and_conflict_rule():
+    items = [
+        {"handle": "m1", "kind": "memory", "title": None, "page": None, "text": "Works at Acme", "at": "2025-01-02",
+         "pinned": True},
+        {"handle": "m2", "kind": "memory", "title": None, "page": None, "text": "Works at Initech", "at": "2026-05-06",
+         "pinned": False},
+        {"handle": "n1", "kind": "note", "title": "decision", "page": None, "text": "Use Postgres", "at": "2026-02-03"},
+        {"handle": "m3", "kind": "memory", "title": None, "page": None, "text": "Undated", "at": None,
+         "pinned": False},
+    ]
+    block, _ = context_block(items)
+    assert "[m1] (memory, pinned, saved 2025-01-02) Works at Acme" in block
+    assert "[m2] (memory, saved 2026-05-06) Works at Initech" in block
+    assert "[n1] (decision, 2026-02-03) Use Postgres" in block
+    assert "[m3] (memory) Undated" in block
+    messages, _ = build_messages([{"role": "user", "content": "where do I work?"}], 8192, 512, items)
+    assert "later date is usually current" in messages[0]["content"]
 
 
 def test_remember_turn_confirms_without_retrieving_the_new_memory(authed, llm):

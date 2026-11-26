@@ -1,4 +1,5 @@
 import json
+import re
 from datetime import datetime, timedelta
 
 from pal import actions, conversations, reminders, work
@@ -107,7 +108,7 @@ def test_focus_project_card_and_notes_reach_the_model(authed, db, llm):
     sent = llm.calls[-1][-1]["content"]
     assert "[p1] (project card) Project Garden: Backyard vegetable beds" in sent
     assert "Order tomato seeds" in sent
-    assert "(decision) We chose raised cedar beds" in sent  # notes are retrieved too, with an n handle
+    assert re.search(r"\(decision, \d{4}-\d\d-\d\d\) We chose raised cedar beds", sent)  # notes are retrieved too, with an n handle
     handles = {s["handle"] for s in next(e for e in events if e["type"] == "sources")["sources"]}
     assert {"p1", "n1"} <= handles
 
