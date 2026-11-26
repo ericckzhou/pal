@@ -1,0 +1,55 @@
+/* Demo badge: a floating pill that opens a short explainer. Uses the app's theme variables. */
+.demo-badge {
+  position: fixed;
+  left: 16px;
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  z-index: 1000;
+  max-width: min(360px, calc(100vw - 32px));
+  font-family: var(--font);
+}
+.demo-pill {
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: var(--accent-text);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgb(0 0 0 / 0.18);
+}
+.demo-card {
+  margin-bottom: 8px;
+  padding: 14px 16px;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  font-size: 13px;
+  line-height: 1.45;
+  box-shadow: 0 8px 28px rgb(0 0 0 / 0.22);
+}
+.demo-badge { display: flex; flex-direction: column-reverse; align-items: flex-start; }
+/* Phones: the sidebar is a drawer and the composer sits at the bottom, so ride in the top bar's empty right side. */
+@media (max-width: 720px) {
+  .demo-badge {
+    left: auto;
+    right: 10px;
+    bottom: auto;
+    top: calc(7px + env(safe-area-inset-top, 0px));
+    flex-direction: column;
+    align-items: flex-end;
+  }
+  .demo-card { margin: 8px 0 0; }
+}
+.demo-card p { margin: 8px 0 0; }
+.demo-card .demo-try { color: var(--muted); }
+.demo-close {
+  margin-top: 10px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--text);
+  border-radius: 8px;
+  padding: 4px 10px;
+  cursor: pointer;
+}

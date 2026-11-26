@@ -16,6 +16,7 @@ __pycache__/
 # Node
 node_modules/
 dist/
+dist-demo/
 
 # Eval raw outputs (synthetic, but large)
 eval/results/
