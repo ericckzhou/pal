@@ -1,0 +1,20 @@
+{"text": "Did Priya email me about the venue deposit?", "search": true, "all": ["priya"], "any": ["deposit", "venue"], "none": ["after:", "before:", "in:sent"]}
+{"text": "find the invoice from Northside Plumbing", "search": true, "all": ["northside"], "none": ["after:", "before:", "newer_than"]}
+{"text": "what's my order number for the standing desk?", "search": true, "all": ["desk"], "none": ["from:"]}
+{"text": "did Marcus reply about Friday's rehearsal?", "search": true, "all": ["marcus"], "any": ["rehearsal"], "none": ["in:sent"]}
+{"text": "any emails from the landlord this week?", "search": true, "any": ["landlord"], "none": ["from:john", "from:smith"]}
+{"text": "show me unread mail from my bank", "search": true, "any": ["is:unread", "bank"], "none": ["in:unread"]}
+{"text": "what was the confirmation code in the Air Transat email?", "search": true, "any": ["transat"]}
+{"text": "did I send the signed lease to Dana?", "search": true, "all": ["dana", "in:sent"], "any": ["lease"]}
+{"text": "look for the email with the tax receipt attachment", "search": true, "any": ["has:attachment", "receipt", "tax"]}
+{"text": "when did the dentist's office last email me?", "search": true, "any": ["dentist"], "none": ["after:", "before:", "in:sent"]}
+{"text": "did the school send anything about the snow day?", "search": true, "any": ["snow", "school"], "none": ["in:sent"]}
+{"text": "what's the tracking number for my Lenovo order", "search": true, "any": ["lenovo"]}
+{"text": "anything in my inbox from Coach Ramirez since November 20?", "search": true, "all": ["ramirez"], "any": ["after:2026/11/20", "after:2026/11/19", "newer_than"]}
+{"text": "summarize the newsletter Hana sent yesterday", "search": true, "all": ["hana"], "none": ["/31", "in:sent"]}
+{"text": "how do I write a polite email declining a job offer?", "search": false}
+{"text": "write an email to my boss asking for Friday off", "search": false}
+{"text": "what's a good subject line for a cold email?", "search": false}
+{"text": "delete all the promo emails in my inbox", "search": false}
+{"text": "send Priya an email saying I'll be late", "search": false}
+{"text": "explain how email encryption works", "search": false}

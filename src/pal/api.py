@@ -17,6 +17,8 @@ from . import (
     claude,
     conversations,
     devices,
+    egress,
+    mail,
     memory,
     model_cmd,
     reminders,
@@ -24,6 +26,7 @@ from . import (
     thinking,
     work,
 )
+from .connectors import gmail, hosts
 from .context import build_messages
 from .llm import LLMError
 
@@ -203,7 +206,7 @@ def _event(**data) -> str:
     return json.dumps(data, default=str) + "\n"
 
 
-_CITE = re.compile(r"\s?\[([mdcnp]\d+)\](?!\()")
+_CITE = re.compile(r"\s?\[([mdcnpeg]\d+)\](?!\()")
 
 
 def strip_unknown_handles(reply: str, sources: list[dict]) -> str:
@@ -236,6 +239,8 @@ def _command_reply(state, conv_id: UUID, content: str) -> StreamingResponse:
         elif cmd.lower() == "/think":
             result = thinking.run(conn, conv_id, arg, state.settings.thinking)
             result["changed"] = False
+        elif cmd.lower() == "/gmail":
+            result = mail.run_command(conn, conv_id, arg)
         else:
             result = actions.run_command(conn, conv_id, content)
         step = {"kind": "command", "label": f"Ran {content.split()[0]}", "detail": None}
@@ -258,12 +263,14 @@ def _command_reply(state, conv_id: UUID, content: str) -> StreamingResponse:
 
 
 _KIND_LABEL = {"memory": "memory", "document": "document", "conversation": "past chat", "note": "note",
-               "project": "project"}
+               "project": "project", "event": "calendar event", "calendar": "calendar note", "email": "email",
+               "mail": "Gmail search"}
 
 
-def _steps(sources: list[dict], saved: dict | None, proposal: dict | None, trace: dict | None = None) -> list[dict]:
+def _steps(sources: list[dict], saved: dict | None, proposal: dict | None, trace: dict | None = None,
+           mail_step: dict | None = None) -> list[dict]:
     """What pal did before replying, shown as small cards above the reply (and stored with it)."""
-    steps: list[dict] = []
+    steps: list[dict] = [mail_step] if mail_step else []
     if sources:
         kinds: dict[str, int] = {}
         for src in sources:
@@ -309,13 +316,21 @@ def post_message(conv_id: UUID, body: MessageBody, request: Request) -> Streamin
             else conversations.history(conn, conv_id)
         # Retrieve before saving a stated memory, so the reply isn't "about" the note it was just given.
         trace: dict | None = None
+        mail_step: dict | None = None
         if cloud and not conv.get("claude_context"):
             items = []  # by default Claude gets only this chat's own text: no memories, documents, notes or project card
         else:  # a local model, or a Claude chat whose owner opted in to sharing what matches (claude_context)
             focus = _project_item(conn, conv_id)
             focus_id = UUID(focus[0]["id"]) if focus else None
             trace = {}
-            items = focus + calendar.context_items(conn, body.content, reminders.local_now()) + retrieval.retrieve(
+            items = focus + calendar.context_items(conn, body.content, reminders.local_now())
+            if not cloud and conv.get("gmail") and mail.asks_about_mail(body.content) and mail.connected(conn):
+                # Live and local-model only: mail goes into this turn's prompt and is never stored or sent to Claude.
+                egress.allow(hosts.for_services([("google", "gmail")]))
+                mail_items, mail_step = mail.lookup(state.llm, body.content, reminders.local_now(),
+                                                    getattr(state, "gmail", None) or gmail.make())
+                items += mail_items
+            items += retrieval.retrieve(
                 conn, state.llm, _retrieval_query(past), conv_id, focus_id, use_rerank=state.settings.rerank == "on",
                 trace=trace,
             )
@@ -341,7 +356,8 @@ def post_message(conv_id: UUID, body: MessageBody, request: Request) -> Streamin
         sources = retrieval.public_sources(used)
         if trace:
             trace = retrieval.mark_trimmed(trace, used)
-    steps = _steps(sources, saved, proposal, trace)
+    steps = _steps(sources, saved, proposal, trace, mail_step)
+    kept_sources = [mail.stored_source(s) for s in sources]  # an email's text is shown now, never kept
 
     def unsent(message: str) -> str:
         """The reply failed: drop the unanswered user message (the UI puts its text back in the box to resend)."""
@@ -376,7 +392,7 @@ def post_message(conv_id: UUID, body: MessageBody, request: Request) -> Streamin
             return
         with state.pool.connection() as conn:
             msg_id = conversations.add_message(
-                conn, conv_id, "assistant", reply, model, sources or None, steps=steps or None, usage=usage,
+                conn, conv_id, "assistant", reply, model, kept_sources or None, steps=steps or None, usage=usage,
                 trace=trace,
             )
         yield _event(type="done", message_id=msg_id, model=model, usage=usage, has_trace=bool(trace))
