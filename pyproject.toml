@@ -18,6 +18,7 @@ dependencies = [
     # Docling's PyTorch, listed so Linux can take the CPU-only build (see [tool.uv.sources]).
     "torch>=2.4 ; sys_platform == 'linux'",
     "torchvision>=0.19 ; sys_platform == 'linux'",
+    "mcp>=1.30.0,<2",
 ]
 
 [project.scripts]
