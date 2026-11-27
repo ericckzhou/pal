@@ -109,6 +109,26 @@ def test_reply_stores_trace_and_endpoint_returns_it(authed, db, llm):
     assert authed.get(f"/api/messages/{msgs[0]['id']}/trace").status_code == 404
 
 
+def test_reranker_fallback_shows_a_step_card(authed, db, llm):
+    _seed(db, llm)
+    llm.json_reply = "not json"
+    conv = authed.post("/api/conversations").json()
+    events = stream_events(authed, conv["id"], "who is my dentist?")
+    steps = [e["step"] for e in events if e["type"] == "step"]
+    assert [s["kind"] for s in steps] == ["retrieval", "notice"]
+    assert steps[1]["label"] == "Reranking skipped"
+    stored = authed.get(f"/api/conversations/{conv['id']}").json()["messages"][-1]["steps"]
+    assert stored == steps
+
+
+def test_no_notice_step_when_the_reranker_runs(authed, db, llm):
+    _seed(db, llm)
+    llm.json_reply = '{"relevant": [1, 2]}'
+    conv = authed.post("/api/conversations").json()
+    events = stream_events(authed, conv["id"], "who is my dentist?")
+    assert all(e["step"]["kind"] != "notice" for e in events if e["type"] == "step")
+
+
 def test_trace_endpoint_needs_a_session(client):
     resp = client.get("/api/messages/00000000-0000-0000-0000-000000000000/trace")
     assert resp.status_code == 401

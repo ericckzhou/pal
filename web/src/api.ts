@@ -46,7 +46,7 @@ export type RetrievalTrace = {
   rerank: { status: "off" | "ran" | "fell_back" | "no_candidates"; pool?: number; kept?: number };
   candidates: TraceCandidate[];
 };
-export type Step = { kind: "retrieval" | "memory" | "proposal" | "command"; label: string; detail: string | null };
+export type Step = { kind: "retrieval" | "memory" | "proposal" | "command" | "notice"; label: string; detail: string | null };
 export type Usage = { prompt_tokens?: number | null; completion_tokens?: number | null };
 export type Message = {
   id?: string;
@@ -105,7 +105,7 @@ export type StreamEvent =
   | { type: "proposal"; proposal: Proposal }
   | { type: "work_changed" }
   | { type: "model_changed"; model: string | null }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string; unsent?: boolean };
 
 export type Project = {
   id: string;

@@ -26,9 +26,29 @@ def test_model_failure_reports_error_and_keeps_partial_reply_out(authed, llm):
     llm.fail = True
     conv = authed.post("/api/conversations").json()
     events = stream_events(authed, conv["id"], "hi")
+    assert events[-1]["type"] == "error" and events[-1]["unsent"] is True
+    # The unanswered message is removed, so history never has two user turns in a row; the UI restores the text.
+    after = authed.get(f"/api/conversations/{conv['id']}").json()
+    assert after["messages"] == [] and after["title"] == "New chat"
+
+
+def test_failed_reply_keeps_earlier_turns_and_title(authed, llm):
+    conv = authed.post("/api/conversations").json()
+    stream_events(authed, conv["id"], "first question")
+    llm.fail = True
+    events = stream_events(authed, conv["id"], "second question")
     assert events[-1]["type"] == "error"
-    roles = [m["role"] for m in authed.get(f"/api/conversations/{conv['id']}").json()["messages"]]
-    assert roles == ["user"]
+    after = authed.get(f"/api/conversations/{conv['id']}").json()
+    assert [m["content"] for m in after["messages"]] == ["first question", "Hello there"]
+    assert after["title"] == "first question"
+
+
+def test_empty_reply_also_drops_the_unanswered_message(authed, llm):
+    llm.reply = ["   "]
+    conv = authed.post("/api/conversations").json()
+    events = stream_events(authed, conv["id"], "hi")
+    assert events[-1] == {"type": "error", "message": "The model returned an empty reply.", "unsent": True}
+    assert authed.get(f"/api/conversations/{conv['id']}").json()["messages"] == []
 
 
 def test_unknown_conversation_is_404(authed):

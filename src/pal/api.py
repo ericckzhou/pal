@@ -248,7 +248,7 @@ _KIND_LABEL = {"memory": "memory", "document": "document", "conversation": "past
                "project": "project"}
 
 
-def _steps(sources: list[dict], saved: dict | None, proposal: dict | None) -> list[dict]:
+def _steps(sources: list[dict], saved: dict | None, proposal: dict | None, trace: dict | None = None) -> list[dict]:
     """What pal did before replying, shown as small cards above the reply (and stored with it)."""
     steps: list[dict] = []
     if sources:
@@ -258,6 +258,10 @@ def _steps(sources: list[dict], saved: dict | None, proposal: dict | None) -> li
         detail = ", ".join(f"{n} {_KIND_LABEL.get(k, k)}{'s' if n > 1 else ''}" for k, n in kinds.items())
         plural = "s" if len(sources) > 1 else ""
         steps.append({"kind": "retrieval", "label": f"Looked up {len(sources)} source{plural}", "detail": detail})
+    if trace and trace.get("rerank", {}).get("status") == "fell_back":
+        # Without this card, abstention quietly gets worse while the model is struggling.
+        steps.append({"kind": "notice", "label": "Reranking skipped",
+                      "detail": "The model couldn't check the search results, so they're in plain search order"})
     if saved:
         steps.append({"kind": "memory", "label": "Saved to memory", "detail": saved["text"][:200]})
     if proposal:
@@ -324,7 +328,13 @@ def post_message(conv_id: UUID, body: MessageBody, request: Request) -> Streamin
         sources = retrieval.public_sources(used)
         if trace:
             trace = retrieval.mark_trimmed(trace, used)
-    steps = _steps(sources, saved, proposal)
+    steps = _steps(sources, saved, proposal, trace)
+
+    def unsent(message: str) -> str:
+        """The reply failed: drop the unanswered user message (the UI puts its text back in the box to resend)."""
+        with state.pool.connection() as conn:
+            conversations.drop_unanswered(conn, conv_id, user_msg_id)
+        return _event(type="error", message=message, unsent=True)
 
     def generate() -> Iterator[str]:
         parts: list[str] = []
@@ -345,11 +355,11 @@ def post_message(conv_id: UUID, body: MessageBody, request: Request) -> Streamin
         except Exception as exc:
             log.exception("model stream failed")
             message = (str(exc) if isinstance(exc, LLMError) else "Claude stopped responding.") if cloud                 else "The local model stopped responding. Is Ollama running?"
-            yield _event(type="error", message=message)
+            yield unsent(message)
             return
         reply = strip_unknown_handles("".join(parts), sources)
         if not reply.strip():
-            yield _event(type="error", message="The model returned an empty reply.")
+            yield unsent("The model returned an empty reply.")
             return
         with state.pool.connection() as conn:
             msg_id = conversations.add_message(

@@ -80,6 +80,21 @@ def add_message(
     return msg_id
 
 
+def drop_unanswered(conn: psycopg.Connection, conv_id: UUID, msg_id: UUID) -> None:
+    """Remove a user message whose reply failed, so history never holds two user turns in a row.
+
+    Anything made from it (a stated memory, a drafted action) stays; their link to the message is cleared. If it
+    was the chat's only message, the chat goes back to "New chat" so the resent text can title it again.
+    """
+    with conn.transaction():
+        conn.execute("DELETE FROM messages WHERE id = %s AND conversation_id = %s AND role = 'user'", (msg_id, conv_id))
+        conn.execute(
+            "UPDATE conversations SET title = 'New chat' WHERE id = %s "
+            "AND NOT EXISTS (SELECT 1 FROM messages WHERE conversation_id = %s)",
+            (conv_id, conv_id),
+        )
+
+
 def history(conn: psycopg.Connection, conv_id: UUID, with_model: bool = False) -> list[dict]:
     """What the model sees. Slash commands and their replies are left out: the model would imitate them."""
     cols = "role, content, model" if with_model else "role, content"

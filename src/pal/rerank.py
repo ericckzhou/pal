@@ -1,10 +1,12 @@
 """Optional reranking: the local chat model reads the fused candidates and keeps only the ones that answer the question.
 
-Off by default (Settings > Retrieval). eval/retrieval_eval.py measures whether it helps: it costs one extra model
-call (about a second on the CPU-class PCs pal targets) per message that has candidates.
+On by default (Settings > Model, "Check search results with the model"). eval/retrieval_eval.py measures it: on the held-out set it raises
+abstention on unanswerable questions and MRR, for one extra model call (about 0.3-0.4 s) per message that has
+candidates. `ENABLED` below is only the default for callers that don't pass `use_rerank`, such as the eval script.
 
 Safety (S7): candidate text is data. The model only returns candidate numbers, so nothing it says reaches the prompt;
-a failed or malformed call falls back to the fused order unchanged.
+a failed or malformed call falls back to the fused order unchanged. The fallback is recorded in the reply's trace and
+shown as a "Reranking skipped" step above the reply.
 """
 
 import json

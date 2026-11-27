@@ -121,7 +121,7 @@ def retrieve(
     """Return context items: pinned memories first, then the best fused matches. Each has a `handle`.
 
     Items tagged with `project_id` (the chat's focus project) get a score boost; untagged items still compete.
-    With `use_rerank` (Settings > Search), the local model reads the top fused candidates and drops the ones that
+    With `use_rerank` (Settings > Model, on by default), the local model reads the top fused candidates and drops the ones that
     don't answer the question (rerank.py). Pass `trace={}` to have it filled with the decision trace.
     """
     use_rerank = rerank.ENABLED if use_rerank is None else use_rerank

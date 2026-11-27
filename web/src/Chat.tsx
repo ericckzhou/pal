@@ -22,9 +22,12 @@ type Props = {
   onToggleRail: () => void;
 };
 
-const STEP_ICON: Record<Step["kind"], string> = { retrieval: "book", memory: "memory", proposal: "bolt", command: "terminal" };
+const STEP_ICON: Record<Step["kind"], string> = {
+  retrieval: "book", memory: "memory", proposal: "bolt", command: "terminal", notice: "flag",
+};
 
-// What pal did before replying: lookups, saved memories, drafted actions, slash commands.
+// What pal did before replying: lookups, saved memories, drafted actions, slash commands, and notices
+// such as the reranker being skipped.
 function StepCards({ steps }: { steps: Step[] }) {
   return (
     <div className="steps">
@@ -168,8 +171,15 @@ export default function Chat({
           setModel(ev.model);
           onChanged(); // the rail's picker and list show the new model
         } else if (ev.type === "error") {
-          setError(ev.message);
-          setMessages((m) => m.slice(0, -1));
+          if (ev.unsent) {
+            // pal dropped the unanswered message; put the text back so it can be resent as-is.
+            setError(`${ev.message} Your message is back in the box to send again.`);
+            setMessages((m) => m.slice(0, -2));
+            setDraft((d) => d || text);
+          } else {
+            setError(ev.message);
+            setMessages((m) => m.slice(0, -1));
+          }
         }
       }
       if (workChanged) {

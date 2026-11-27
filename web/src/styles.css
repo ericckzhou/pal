@@ -304,6 +304,8 @@ code { font-family: var(--mono); font-size: 0.9em; overflow-wrap: anywhere; }
 .step-label { color: var(--text); white-space: nowrap; }
 .step-detail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .step-proposal { border-style: dashed; border-color: var(--accent); }
+.step-notice { border-color: var(--warn); }
+.step-notice .icon-svg { color: var(--warn); }
 .reply-meta { margin: 0.35rem 0 0; font-size: 0.75rem; color: var(--muted); font-family: var(--mono); }
 .typing { font-style: italic; }
 .hljs-keyword, .hljs-selector-tag, .hljs-built_in, .hljs-type { color: var(--code-kw); }
