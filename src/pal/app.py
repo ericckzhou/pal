@@ -1,8 +1,11 @@
 """Application factory: one process serving the API and the built web UI."""
 
 import asyncio
+import functools
 import logging
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
@@ -27,6 +30,7 @@ from . import (
     memory_api,
     memory_replace,
     reminders,
+    reread,
     review,
     review_api,
     security,
@@ -43,16 +47,53 @@ MEMORY_TICK_S = 60
 EMBED_TICK_S = 5
 REMINDER_TICK_S = 30
 RESCAN_CHECK_S = 60  # how often the rescan loop looks at its interval setting
+SHUTDOWN_WAIT_S = 15  # how long shutdown waits for a background job to finish the file or batch it is on
+
+
+class BackgroundJobs:
+    """Where the background loops run their blocking work, so shutdown can tell it to stop.
+
+    Cancelling an asyncio task doesn't stop a thread it started: a folder rescan would keep reading PDFs after the
+    database pool closed, and the process would wait for it on exit. Long jobs check `stop` between files or batches;
+    `shutdown` sets it and waits up to SHUTDOWN_WAIT_S for whatever is still running.
+    """
+
+    def __init__(self) -> None:
+        self.stop = threading.Event()
+        self._executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="pal-bg")
+        self._active = 0
+        self._lock = threading.Lock()
+
+    def _call(self, fn, *args):
+        with self._lock:
+            self._active += 1
+        try:
+            return fn(*args)
+        finally:
+            with self._lock:
+                self._active -= 1
+
+    async def run(self, fn, *args):
+        return await asyncio.get_running_loop().run_in_executor(self._executor, functools.partial(self._call, fn, *args))
+
+    async def shutdown(self) -> None:
+        self.stop.set()
+        self._executor.shutdown(wait=False, cancel_futures=True)
+        deadline = time.monotonic() + SHUTDOWN_WAIT_S
+        while self._active and time.monotonic() < deadline:
+            await asyncio.sleep(0.05)
+        if self._active:
+            log.warning("shutting down with %d background job(s) still running", self._active)
 
 
 async def _memory_loop(app: FastAPI, idle_minutes: int) -> None:
     while True:
         await asyncio.sleep(MEMORY_TICK_S)
         try:
-            n = await asyncio.to_thread(memory.scan_idle, app.state.pool, app.state.llm, idle_minutes)
+            n = await app.state.jobs.run(memory.scan_idle, app.state.pool, app.state.llm, idle_minutes)
             if n:
                 log.info("proposed %d memories", n)
-            r = await asyncio.to_thread(memory_replace.check_pending, app.state.pool, app.state.llm)
+            r = await app.state.jobs.run(memory_replace.check_pending, app.state.pool, app.state.llm)
             if r:
                 log.info("suggested %d memory replacements", r)
         except Exception:
@@ -64,7 +105,7 @@ async def _embed_loop(app: FastAPI) -> None:
     while True:
         await asyncio.sleep(EMBED_TICK_S)
         try:
-            n = await asyncio.to_thread(embed.embed_all, app.state.pool, app.state.llm)
+            n = await app.state.jobs.run(embed.embed_all, app.state.pool, app.state.llm, app.state.jobs.stop)
             if n:
                 log.info("embedded %d items", n)
         except Exception as exc:
@@ -75,19 +116,19 @@ async def _embed_loop(app: FastAPI) -> None:
 async def _reminder_loop(app: FastAPI) -> None:
     while True:
         try:
-            n = await asyncio.to_thread(reminders.tick, app.state.pool)
+            n = await app.state.jobs.run(reminders.tick, app.state.pool)
             if n:
                 log.info("fired %d reminders", n)
         except Exception:
             log.exception("reminder tick failed")
         try:
-            made = await asyncio.to_thread(review.tick, app.state.pool)
+            made = await app.state.jobs.run(review.tick, app.state.pool)
             if made:
                 log.info("weekly digest made for %s", made["week_start"])
         except Exception:
             log.exception("weekly digest failed")
         try:
-            sent = await asyncio.to_thread(brief.tick, app.state.pool, app.state.settings.brief_hour)
+            sent = await app.state.jobs.run(brief.tick, app.state.pool, app.state.settings.brief_hour)
             if sent:
                 log.info("morning brief sent")
         except Exception:
@@ -105,7 +146,7 @@ async def _rescan_loop(app: FastAPI) -> None:
             continue
         last = time.monotonic()
         try:
-            found = await asyncio.to_thread(_rescan, app.state.pool)
+            found = await app.state.jobs.run(_rescan, app.state.pool, app.state.jobs.stop)
             if found["added"] or found["updated"]:
                 log.info("folder rescan: %d added, %d updated", found["added"], found["updated"])
             if found["missing"]:
@@ -114,9 +155,9 @@ async def _rescan_loop(app: FastAPI) -> None:
             log.exception("folder rescan failed")
 
 
-def _rescan(pool) -> dict:
+def _rescan(pool, stop: threading.Event) -> dict:
     with pool.connection() as conn:
-        return ingest.rescan_folders(conn)
+        return ingest.rescan_folders(conn, stop)
 
 
 WEB_DIST = Path(__file__).resolve().parents[2] / "web" / "dist"
@@ -144,6 +185,7 @@ def create_app(settings: Settings | None = None, llm=None, start_background: boo
         except Exception:
             log.exception("saved settings could not be applied; using defaults")
         live = app.state.settings
+        app.state.jobs = BackgroundJobs()
         tasks: list[asyncio.Task] = []
         if start_background:
             start_nightly(live.backup_dir, live.db_name, live.backup_keep)
@@ -155,10 +197,12 @@ def create_app(settings: Settings | None = None, llm=None, start_background: boo
         try:
             yield
         finally:
+            reread.stop()  # the owner-started PDF re-read stops after its current file
             for task in tasks:
                 task.cancel()
                 with suppress(asyncio.CancelledError):
                     await task
+            await app.state.jobs.shutdown()
             app.state.pool.close()
 
     app = FastAPI(title="pal", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)

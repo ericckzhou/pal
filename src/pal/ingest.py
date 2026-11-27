@@ -8,6 +8,7 @@ import hashlib
 import logging
 import os
 import re
+import threading
 from pathlib import Path
 from uuid import UUID
 
@@ -280,13 +281,16 @@ def _store_file(conn: psycopg.Connection, f: Path, folder: str | None, project_i
         summary["skipped"].append({"path": str(f), "reason": "pal couldn't save this file's text"})
 
 
-def rescan_folders(conn: psycopg.Connection) -> dict:
+def rescan_folders(conn: psycopg.Connection, stop: threading.Event | None = None) -> dict:
     """Refresh every folder the owner added: new files are added, changed files re-read.
 
     A file pal already has is only read again when it was modified after pal stored it, so a quiet folder costs a
     directory walk. PDFs read by an older extractor are NOT re-read here: that's slow, so the owner starts it
     (reread.py, from the Documents page). Files deleted from disk, and folders that are gone (an unplugged drive), are left
     in pal; removing them stays the owner's choice on the Documents page.
+
+    `stop` (set when pal shuts down) is checked between files; a stopped scan reports `"stopped": True`, and the
+    files it didn't reach are picked up by the next one.
     """
     summary: dict = {"added": 0, "updated": 0, "unchanged": 0, "skipped": [], "missing": []}
     folders = [r[0] for r in conn.execute(
@@ -305,6 +309,9 @@ def rescan_folders(conn: psycopg.Connection) -> dict:
             summary["skipped"].append({"path": folder, "reason": str(exc)})
             continue
         for f in files:
+            if stop is not None and stop.is_set():
+                summary["stopped"] = True
+                return summary
             path = str(f.resolve())
             try:
                 seen = stored.get(path)

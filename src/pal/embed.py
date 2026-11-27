@@ -1,6 +1,7 @@
 """Background embedding of chunks, memories and messages that don't have a vector yet."""
 
 import logging
+import threading
 
 import psycopg
 
@@ -47,9 +48,12 @@ def embed_pending(conn: psycopg.Connection, llm, batch: int = BATCH) -> int:
     return done
 
 
-def embed_all(pool, llm) -> int:
+def embed_all(pool, llm, stop: threading.Event | None = None) -> int:
+    """Embed everything still missing a vector, a batch at a time; `stop` (pal shutting down) is checked between."""
     total = 0
     while True:
+        if stop is not None and stop.is_set():
+            return total
         with pool.connection() as conn:
             n = embed_pending(conn, llm)
         total += n
