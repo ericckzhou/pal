@@ -65,7 +65,7 @@ class GoogleAPI:
         self._http = http
         self._what = what  # "Google Calendar", used in messages
 
-    def get(self, url: str, params: dict | None = None) -> dict:
+    def _get(self, url: str, params: dict | None) -> httpx.Response:
         for attempt in (1, 2):
             headers = {"Authorization": f"Bearer {self._tokens.access_token()}"}
             try:
@@ -79,5 +79,12 @@ class GoogleAPI:
                 raise GoogleAuthError("Google rejected pal's sign-in. Run: pal connect google <service>")
             if resp.status_code != 200:
                 raise GoogleAPIError(_explain(resp, self._what))
-            return resp.json()
+            return resp
         raise GoogleAPIError(f"{self._what} request failed")  # not reached
+
+    def get(self, url: str, params: dict | None = None) -> dict:
+        return self._get(url, params).json()
+
+    def get_bytes(self, url: str, params: dict | None = None) -> bytes:
+        """A file's content (a download or an export)."""
+        return self._get(url, params).content

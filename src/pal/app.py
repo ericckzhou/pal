@@ -41,7 +41,7 @@ from . import (
 from .auth import LoginLimiter
 from .backup import start_nightly
 from .config import Settings, dsn
-from .connectors import gcal  # noqa: F401  (registers the Google Calendar connector)
+from .connectors import gcal, gdrive  # noqa: F401  (register the Google connectors)
 from .connectors import sync as connector_sync
 from .llm import OllamaGateway
 

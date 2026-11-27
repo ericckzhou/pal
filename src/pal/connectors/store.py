@@ -54,6 +54,10 @@ def set_enabled(conn: psycopg.Connection, connection_id: UUID, enabled: bool) ->
     return conn.execute("UPDATE connections SET enabled = %s WHERE id = %s", (enabled, connection_id)).rowcount == 1
 
 
+def set_config(conn: psycopg.Connection, connection_id: UUID, config: dict) -> None:
+    conn.execute("UPDATE connections SET config = %s WHERE id = %s", (Jsonb(config), connection_id))
+
+
 def record_success(conn: psycopg.Connection, connection_id: UUID, cursor: str | None) -> None:
     """The one place a cursor moves forward: called only after every item of a sync was stored."""
     conn.execute(

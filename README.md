@@ -152,7 +152,7 @@ Restart pal, and the Claude models show up in the model picker above the chat bo
 
 ### Connecting Google (optional, in progress)
 
-pal can read your Google Calendar and Drive, and search Gmail when you ask. All of it is read-only. Calendar and Drive are copied into pal's own database on this PC; Gmail is never copied, only searched. Nothing goes to any server run by pal; there isn't one. *Calendar works now: events show on the Schedule page, in the morning brief, and in answers to questions like "what's on Thursday?" (pal says what it sees on your connected calendars, never that you're free). Drive and Gmail come next.*
+pal can read your Google Calendar and Drive, and search Gmail when you ask. All of it is read-only. Calendar and Drive are copied into pal's own database on this PC; Gmail is never copied, only searched. Nothing goes to any server run by pal; there isn't one. *Calendar works now: events show on the Schedule page, in the morning brief, and in answers to questions like "what's on Thursday?" (pal says what it sees on your connected calendars, never that you're free). Drive works too: pick folders with `pal drive-folders add <folder link>`; Docs, Sheets, Slides, PDFs and text files in them (and in folders inside them) become searchable documents. Gmail comes next.*
 
 You sign in with your own Google OAuth client, because a public repo can't ship one. It takes about 10 minutes, once:
 
@@ -211,6 +211,7 @@ Run each one as `uv run pal <command>`.
 | `connect google <service>` | Sign in and connect `calendar`, `drive` or `gmail` |
 | `disconnect google <service>` | Remove a service and everything synced from it (`all` for every one) |
 | `connections` | List connected services and their last sync |
+| `drive-folders list` / `add <link>` / `remove <name>` | Choose which Google Drive folders pal syncs |
 | `migrate` | Update the database structure (`serve` already does this) |
 
 ## Settings

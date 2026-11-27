@@ -5,6 +5,7 @@ keeping it on the command line means a phone session can never start or change a
 """
 
 import argparse
+import re
 import webbrowser
 from pathlib import Path
 
@@ -38,6 +39,9 @@ def add_parsers(sub: argparse._SubParsersAction) -> None:
     dis.add_argument("provider", choices=["google"])
     dis.add_argument("service", choices=(*SERVICES, "all"))
     sub.add_parser("connections", help="list connected services")
+    df = sub.add_parser("drive-folders", help="pick which Google Drive folders pal syncs (folders inside them included)")
+    df.add_argument("action", choices=["list", "add", "remove"])
+    df.add_argument("folder", nargs="?", help="a folder link from Drive (or its id); for remove, its name works too")
 
 
 def run(args: argparse.Namespace, settings: Settings) -> bool:
@@ -50,6 +54,8 @@ def run(args: argparse.Namespace, settings: Settings) -> bool:
         cmd_disconnect(settings, args.service)
     elif args.cmd == "connections":
         cmd_connections(settings)
+    elif args.cmd == "drive-folders":
+        cmd_drive_folders(settings, args.action, args.folder)
     else:
         return False
     return True
@@ -93,7 +99,10 @@ def cmd_connect(settings: Settings, service: str, no_browser: bool, port: int) -
             raise SystemExit(str(exc)) from exc
     granted = sorted(s.rsplit("/", 1)[-1] for s in row["scopes"] if s.startswith("https://"))
     print(f"Connected {service} for {row['account'] or 'your Google account'}. Granted: {', '.join(granted)}.")
-    print("pal starts syncing within a few minutes if it's running; no restart needed.")
+    if service == "drive":
+        print("Next, pick folders to sync: pal drive-folders add <folder link>")
+    else:
+        print("pal starts syncing within a few minutes if it's running; no restart needed.")
 
 
 def cmd_disconnect(settings: Settings, service: str) -> None:
@@ -121,3 +130,65 @@ def cmd_connections(settings: Settings) -> None:
         err = f"  last error: {r['last_error']}" if r["last_error"] else ""
         print(f"{r['provider']}/{r['service']:<9} {state:<7} {r['account'] or '-':<30} {r['items']:>5} items  "
               f"last synced {last}{err}")
+
+
+_FOLDER_LINK = re.compile(r"(?:/folders/|[?&]id=)([A-Za-z0-9_-]{10,})")
+_FOLDER_ID = re.compile(r"^[A-Za-z0-9_-]{10,}$")
+
+
+def folder_id(text: str) -> str:
+    """The folder id from a Drive link like https://drive.google.com/drive/folders/<id>, or a bare id."""
+    m = _FOLDER_LINK.search(text)
+    if m:
+        return m.group(1)
+    if _FOLDER_ID.match(text.strip()):
+        return text.strip()
+    raise SystemExit("That isn't a Drive folder link. Open the folder in Drive and copy the address bar.")
+
+
+def _drive_row(conn: psycopg.Connection) -> dict:
+    row = next((r for r in store.list_all(conn) if (r["provider"], r["service"]) == ("google", "drive")), None)
+    if row is None:
+        raise SystemExit("Google Drive isn't connected. Run: pal connect google drive")
+    return row
+
+
+def cmd_drive_folders(settings: Settings, action: str, folder: str | None, api=None) -> None:
+    from . import gdrive, google_api
+
+    with psycopg.connect(dsn(settings), autocommit=True) as conn:
+        row = _drive_row(conn)
+        folders = [f for f in row["config"].get("folders") or [] if isinstance(f, dict)]
+        if action == "list":
+            if not folders:
+                print("No folders chosen. Add one: pal drive-folders add <folder link>")
+            for f in folders:
+                print(f"{f['name']}  ({f['id']})")
+            return
+        if not folder:
+            raise SystemExit(f"Say which folder: pal drive-folders {action} <folder link>")
+        if action == "add":
+            fid = folder_id(folder)
+            if any(f["id"] == fid for f in folders):
+                raise SystemExit("That folder is already chosen.")
+            api = api or google_api.GoogleAPI(google_api.shared_tokens(), google_api.shared_client(), "Google Drive")
+            try:
+                meta = api.get(f"{gdrive.API}/files/{fid}", {"fields": "id,name,mimeType,trashed"})
+            except (google_api.GoogleAPIError, google_auth.GoogleAuthError) as exc:
+                raise SystemExit(str(exc)) from exc
+            if meta.get("mimeType") != gdrive.FOLDER or meta.get("trashed"):
+                raise SystemExit("That link is a file, not a folder (or it's in the trash).")
+            folders.append({"id": meta["id"], "name": meta.get("name") or meta["id"]})
+            print(f"Added {folders[-1]['name']}. pal syncs it and the folders inside it at the next sync.")
+        else:
+            keep = [f for f in folders if folder not in (f["id"], f["name"]) and f["id"] != _maybe_id(folder)]
+            if len(keep) == len(folders):
+                raise SystemExit("That folder isn't chosen. See: pal drive-folders list")
+            folders = keep
+            print("Removed. Its files leave pal at the next sync.")
+        store.set_config(conn, row["id"], {**row["config"], "folders": folders})
+
+
+def _maybe_id(text: str) -> str | None:
+    m = _FOLDER_LINK.search(text)
+    return m.group(1) if m else None
