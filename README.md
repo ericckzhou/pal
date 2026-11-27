@@ -16,15 +16,17 @@ You use pal in a web browser, either on the PC itself or on your phone or laptop
 
 ## What it does
 
-**Chat.** Talk to a local AI model. When it answers, it can draw on what it remembers about you, your documents, your notes and earlier conversations, and it tells you where the information came from. When nothing you've stored fits the question, pal gives the model nothing, so it can't cite something unrelated. [How well this works is measured](eval/RETRIEVAL.md). You can set how much each chat "thinks" before it answers (off, low, medium or high).
+**Chat.** Talk to a local AI model. When it answers, it can draw on what it remembers about you, your documents, your notes and earlier conversations, and it tells you where the information came from. When nothing you've stored fits the question, pal gives the model nothing, so it can't cite something unrelated. On a held-out test set it finds the right item for 97% of questions, and sends nothing for every off-topic question ([full results](eval/RETRIEVAL.md)). Under each answer, **Why these sources?** shows how pal picked them: what each search found, what the double-check kept or dropped, and what was cut to fit. If a reply fails, your message goes back into the text box so you can send it again. You can set how much each chat "thinks" before it answers (off, low, medium or high).
 
 **Memory.** Say "remember that…" and pal saves the fact. After a conversation goes quiet, pal may also suggest a few things to remember. Nothing is saved until you say yes. When something changes (a new job, a move), pal can suggest that the new memory replaces the old one. The old one is kept under Replaced, where you can restore it. pal also tells the model when each memory was saved, so newer facts win.
 
-**Documents.** Upload PDFs, Markdown or text files, or point pal at a folder. It reads them, including tables and scanned pages in PDFs, so you can ask questions about them later.
+**Documents.** Upload PDFs, Markdown or text files, or point pal at a folder. It reads them, including tables and scanned pages in PDFs, so you can ask questions about them later. Folders are rescanned every 30 minutes, so edited and new files are picked up on their own.
 
 **Projects and tasks.** Keep projects, tasks, notes and decisions in one place. Each project has its own page with its open tasks, related memories and documents, and upcoming reminders.
 
 **Reminders.** Set one-off or repeating reminders. A reminder set for 9 a.m. stays at 9 a.m. when the clocks change.
+
+**Morning brief and weekly digest.** Each morning pal sends one notification listing what's due that day (nothing on empty days). Every Monday it writes a digest: what you finished last week and what's due this week. It's built by plain database queries, not the AI, so it never makes anything up. The Status page has an **Attention** list of tasks and projects that have gone quiet, each with a "Still on it" button. The brief's hour and the folder rescan interval are set under Schedule > Automations (0 turns either off).
 
 **You stay in charge.** The AI can *suggest* a task or a reminder, but it is only created once you confirm it. You can also create them yourself with `/task`, `/remind`, `/note`, `/decision` and `/project`.
 
@@ -164,7 +166,7 @@ This creates a database password, builds pal, starts everything, downloads the A
 | `bash scripts/pal-docker.sh logs` | Follow pal's log |
 | `bash scripts/pal-docker.sh pal <command>` | Run any command from the table below, e.g. `pal backup-key --show` |
 
-Your secrets, backups and kept uploads are in `~/.local/share/pal-docker` (set `PAL_HOME` to change it). To add documents from a folder, start pal with `PAL_DOCS=/path/to/folder` and run `bash scripts/pal-docker.sh pal ingest /docs`. Only pal's port is published, and only on `127.0.0.1`; the database and Ollama aren't reachable from outside Docker. The AI runs on the CPU in this setup.
+Your secrets, backups and kept uploads are in `~/.local/share/pal-docker` (set `PAL_HOME` to change it). To use a port other than 8765, set `PAL_PORT`. To add documents from a folder, start pal with `PAL_DOCS=/path/to/folder` and run `bash scripts/pal-docker.sh pal ingest /docs`. Only pal's port is published, and only on `127.0.0.1`; the database and Ollama aren't reachable from outside Docker. The AI runs on the CPU in this setup.
 
 ## Commands
 
@@ -203,7 +205,7 @@ You can change most things on the **Settings** page, such as which models are av
 | **Web app** | React 19, TypeScript, Vite |
 | **Remote access** | Tailscale Serve |
 | **Secrets** | Windows Credential Manager; a private secrets folder with Docker |
-| **Quality** | pytest (86% coverage), ruff, mypy, ESLint, GitHub Actions; a [search-quality evaluation](eval/RETRIEVAL.md) |
+| **Quality** | pytest (88% coverage), ruff, mypy, ESLint, GitHub Actions; a [search-quality evaluation](eval/RETRIEVAL.md) |
 | **Packaging** | uv, pnpm; Docker Compose for Linux and Mac |
 
 How the parts talk to each other, and why it's built this way, is explained in **[ARCHITECTURE.md](ARCHITECTURE.md)**.
