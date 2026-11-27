@@ -96,6 +96,7 @@ export function status(s: DemoState): Status {
   const proposed = s.memories.filter((m) => m.status === "proposed").length;
   const upcoming = s.reminders.filter((r) => r.active && !r.paused).map((r) => r.due_at).sort();
   return {
+    connections: [],
     version: "0.1.0",
     started_at: new Date(STARTED).toISOString(),
     uptime_s: Math.round((Date.now() - STARTED) / 1000),

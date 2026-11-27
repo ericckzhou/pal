@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, Encryption, Status as StatusData } from "./api";
+import { api, Encryption, Status as StatusData, SyncHealth } from "./api";
 import Attention from "./Attention";
 import { bytes, duration, num, relTime } from "./format";
 import { Icon } from "./Icon";
@@ -41,6 +41,25 @@ function Tile({ label, value, sub, state, onClick }: {
     <button className="tile" onClick={onClick}>{body}</button>
   ) : (
     <div className="tile">{body}</div>
+  );
+}
+
+function SyncTile({ items, owner, onView }: { items: SyncHealth[]; owner: boolean; onView: Props["onView"] }) {
+  const bad = items.filter((i) => i.state === "error" || i.state === "stale");
+  const synced = items.filter((i) => i.service !== "gmail" && i.last_ok_at).map((i) => i.last_ok_at as string).sort();
+  const sub = bad.length
+    ? bad.map((i) => `${i.name} ${i.state === "error" ? "failed" : "is behind"}`).join(" · ")
+    : synced.length
+      ? `oldest sync ${relTime(synced[0])}`
+      : items.map((i) => i.name).join(", ");
+  return (
+    <Tile
+      label="Google sync"
+      value={bad.length ? `${bad.length} need${bad.length === 1 ? "s" : ""} attention` : `${items.length} connected`}
+      sub={sub}
+      state={bad.length ? "warn" : items.every((i) => i.state === "paused") ? undefined : "ok"}
+      onClick={owner ? () => onView("connections") : undefined}
+    />
   );
 }
 
@@ -140,6 +159,7 @@ export default function Status({ onOpenConversation, onView, onStatus, onAuthErr
           sub={c.next_reminder ? `next ${relTime(c.next_reminder)}` : "none scheduled"}
           onClick={() => onView("schedule")}
         />
+        {data.connections.length > 0 && <SyncTile items={data.connections} owner={owner} onView={onView} />}
         <Tile label="Paired devices" value={String(c.devices)} onClick={() => onView("devices")} />
         {data.encryption && (
           <Tile

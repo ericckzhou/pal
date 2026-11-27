@@ -597,3 +597,8 @@ button.board-card-title { display: block; width: 100%; text-align: left; border:
 .notice-inline { margin: 0; color: var(--warn); }
 .chat-toggle { display: inline-flex; align-items: center; gap: 0.35rem; cursor: pointer; color: var(--muted); white-space: nowrap; }
 .chat-toggle input { width: auto; margin: 0; }
+
+.free-check { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; margin: 0.5rem 0 0.75rem; }
+.free-check input { width: auto; }
+.free-result { flex-basis: 100%; }
+.free-result p { margin: 0.25rem 0; }

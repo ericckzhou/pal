@@ -145,6 +145,10 @@ export type CalendarEvent = {
   start: string | null;
 };
 
+export type FreeBusy =
+  | { connected: false }
+  | { connected: true; free: boolean; busy: CalendarEvent[]; all_day: CalendarEvent[]; coverage: string };
+
 export type GoogleService = "calendar" | "drive" | "gmail";
 export type Connection = {
   id: string;
@@ -279,7 +283,9 @@ export type DigestBody = {
   neglected: { tasks: NeglectedTask[]; projects: QuietProject[] };
 };
 export type Digest = DigestRow & { body: DigestBody };
+export type SyncHealth = { service: GoogleService; name: string; state: "ok" | "error" | "stale" | "paused"; last_ok_at: string | null };
 export type Status = {
+  connections: SyncHealth[];
   version: string;
   started_at: string;
   uptime_s: number;
@@ -519,6 +525,8 @@ export const api = {
     call<{ added: DriveFolder; folders: DriveFolder[] }>(`/api/connections/${id}/folders`, { method: "POST", body: JSON.stringify({ link }) }),
   removeDriveFolder: (id: string, folderId: string) =>
     call<{ folders: DriveFolder[] }>(`/api/connections/${id}/folders/${encodeURIComponent(folderId)}`, { method: "DELETE" }),
+  calendarFree: (day: string, start: string, end: string) =>
+    call<FreeBusy>(`/api/calendar/free?${new URLSearchParams({ day, start, end })}`),
   calendarEvents: (days = 14) => call<{ connected: boolean; events: CalendarEvent[] }>(`/api/calendar/events?days=${days}`),
   pauseReminder: (id: string) => call<Reminder>(`/api/reminders/${id}/pause`, { method: "POST" }),
   resumeReminder: (id: string) => call<Reminder>(`/api/reminders/${id}/resume`, { method: "POST" }),

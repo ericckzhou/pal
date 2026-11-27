@@ -1,10 +1,74 @@
-import { useEffect, useState } from "react";
-import { api, CalendarEvent, Reminder } from "./api";
+import { FormEvent, useEffect, useState } from "react";
+import { api, CalendarEvent, FreeBusy, Reminder } from "./api";
 import { dateTime, relTime } from "./format";
 import { Icon } from "./Icon";
 import ScheduleAutomations from "./ScheduleAutomations";
 
 type Props = { version: number; owner: boolean; onAuthError: (err: unknown) => void };
+
+function localDay(d = new Date()): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+// "Am I free?" for a day and time range, answered from the connected calendars only.
+function FreeCheck() {
+  const [day, setDay] = useState(localDay);
+  const [start, setStart] = useState("14:00");
+  const [end, setEnd] = useState("15:00");
+  const [result, setResult] = useState<FreeBusy | null>(null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const check = (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError("");
+    api
+      .calendarFree(day, start, end)
+      .then(setResult)
+      .catch((err) => {
+        setResult(null);
+        setError(err instanceof Error ? err.message : "Couldn't check.");
+      })
+      .finally(() => setBusy(false));
+  };
+
+  return (
+    <form className="free-check" onSubmit={check}>
+      <span className="small">Am I free</span>
+      <input type="date" value={day} onChange={(e) => (setDay(e.target.value), setResult(null))} required aria-label="Day" />
+      <input type="time" value={start} onChange={(e) => (setStart(e.target.value), setResult(null))} required aria-label="From" />
+      <span className="small">to</span>
+      <input type="time" value={end} onChange={(e) => (setEnd(e.target.value), setResult(null))} required aria-label="To" />
+      <button className="small" disabled={busy}>
+        Check
+      </button>
+      {error && <p className="error small">{error}</p>}
+      {result && result.connected && (
+        <div className="free-result small" role="status">
+          {result.free ? (
+            <p className="notice">Free. Nothing in that time on your {result.coverage}.</p>
+          ) : (
+            <>
+              <p className="error">Busy:</p>
+              <ul className="calendar-list">
+                {result.busy.map((ev) => (
+                  <li key={ev.id} className={ev.status === "tentative" ? "tentative" : undefined}>
+                    <span className="calendar-when">{ev.when}</span>
+                    <span className="calendar-title">{ev.title}</span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+          {result.all_day.length > 0 && (
+            <p className="muted">All day: {result.all_day.map((ev) => ev.title).join(", ")} (not counted as busy).</p>
+          )}
+        </div>
+      )}
+    </form>
+  );
+}
 
 function state(r: Reminder): { label: string; cls: string } {
   if (!r.active) return { label: "Done", cls: "" };
@@ -71,6 +135,7 @@ export default function Schedule({ version, owner, onAuthError }: Props) {
         <section className="calendar-band" aria-labelledby="calendar-heading">
           <h3 id="calendar-heading">Calendar</h3>
           <p className="muted small">The next two weeks from your connected Google Calendar. Read-only; change events in Google.</p>
+          <FreeCheck />
           {events.length === 0 ? (
             <p className="muted">Nothing on your connected calendars in the next two weeks.</p>
           ) : (

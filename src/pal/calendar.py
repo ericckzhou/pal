@@ -132,6 +132,19 @@ def today_summary(conn: psycopg.Connection, today: date, tz: tzinfo | None = Non
     return len(events), first
 
 
+def free_between(conn: psycopg.Connection, start: datetime, end: datetime) -> dict:
+    """Is [start, end) free on the connected calendars? Timed events that overlap make it busy; all-day events on
+    that day are listed but don't count (they're usually holidays or reminders, not meetings).
+
+    `start` and `end` are aware datetimes on one local day.
+    """
+    events = between(conn, start.date(), start.date() + timedelta(days=1), start.tzinfo)
+    busy = [e for e in events if not e["all_day"] and e["start"] < end and e["end"] > start]
+    all_day = [e for e in events if e["all_day"]]
+    return {"free": not busy, "busy": [public(e) for e in busy], "all_day": [public(e) for e in all_day],
+            "coverage": COVERAGE}
+
+
 def public(event: dict) -> dict:
     """An event for the Schedule page."""
     return {"id": str(event["id"]), "title": event["title"], "when": describe(event), "all_day": event["all_day"],

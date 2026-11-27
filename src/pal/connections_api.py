@@ -1,6 +1,6 @@
 """Connected services (PC only): list them, sync now, pause or resume, disconnect. Plus calendar events to read."""
 
-from datetime import timedelta
+from datetime import date, datetime, time, timedelta
 from uuid import UUID
 
 import httpx
@@ -176,6 +176,19 @@ def disconnect(connection_id: UUID, request: Request) -> dict:
             raise HTTPException(status_code=404, detail="No such connection")
         with httpx.Client() as http:
             return google.disconnect(conn, connection_id, http)
+
+
+@events.get("/free")
+def free(request: Request, day: date, start: time, end: time) -> dict:
+    """"Am I free?" for one local day and time range, from the connected calendars only."""
+    if end <= start:
+        raise HTTPException(status_code=422, detail="The end time must be after the start time.")
+    lo = reminders.aware(datetime.combine(day, start))
+    hi = reminders.aware(datetime.combine(day, end))
+    with request.app.state.pool.connection() as conn:
+        if not calendar.connected(conn):
+            return {"connected": False}
+        return {"connected": True, **calendar.free_between(conn, lo, hi)}
 
 
 @events.get("/events")

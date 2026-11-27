@@ -7,7 +7,7 @@ import os
 import shutil
 import sys
 import time
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from importlib import metadata
 from typing import Literal
 from uuid import UUID
@@ -99,6 +99,32 @@ def pressure(disk_free: int | None, memory: tuple[float, int] | None, ollama_up:
     return out
 
 
+SYNC_STALE = timedelta(hours=6)  # well past the background sync interval, so one slow run doesn't warn
+SYNC_NAMES = {"calendar": "Google Calendar", "drive": "Google Drive", "gmail": "Gmail"}
+
+
+def sync_health(rows: list[dict], now: datetime) -> tuple[list[dict], list[dict]]:
+    """Each connection's health for the Status tile, and a banner warning for each one that failed or went quiet.
+
+    Gmail is searched live, so it never goes stale; a paused connection is the owner's choice, so it never warns.
+    """
+    out, warnings = [], []
+    for r in rows:
+        name = SYNC_NAMES.get(r["service"], r["service"])
+        since = r["last_ok_at"] or r["created_at"]
+        stale = bool(r["enabled"] and r["service"] != "gmail" and not r["last_error"] and since
+                     and now - since > SYNC_STALE)
+        state = "paused" if not r["enabled"] else "error" if r["last_error"] else "stale" if stale else "ok"
+        out.append({"service": r["service"], "name": name, "state": state, "last_ok_at": r["last_ok_at"]})
+        if state == "error":
+            warnings.append({"level": "elevated", "kind": f"sync-{r['service']}",
+                             "message": f"{name} sync failed: {r['last_error'][:200]} Open Connections to fix it."})
+        elif state == "stale":
+            warnings.append({"level": "elevated", "kind": f"sync-{r['service']}",
+                             "message": f"{name} hasn't synced in over 6 hours. Is pal's background sync running?"})
+    return out, warnings
+
+
 ENCRYPTION_MESSAGES = {
     "unavailable": "{drive} isn't encrypted, and Device Encryption isn't available for it on this PC. If the PC is "
                    "stolen, pal's chats, memories and backups can be read straight off the disk.",
@@ -181,6 +207,8 @@ def status(request: Request, session: auth.Session = Depends(require_session)) -
         counts["stale_pdfs"] = reread.stale(conn)["files"]
         counts["reread"] = reread.snapshot()
         acked = conn.execute("SELECT 1 FROM app_settings WHERE key = %s", (encryption.ACK_KEY,)).fetchone() is not None
+        syncs, sync_warnings = sync_health(_rows(conn, "SELECT service, enabled, last_ok_at, last_error, created_at "
+                                                       "FROM connections ORDER BY service"), datetime.now(UTC))
     enc = encryption.current()
     backups = _backups(settings)
     disk = _disk_free(settings.backup_dir)
@@ -198,7 +226,8 @@ def status(request: Request, session: auth.Session = Depends(require_session)) -
         "backups": backups,
         "disk_free": disk,
         "pressure": pressure(disk, _memory_available(), ollama["up"])
-                    + [w for w in [encryption_warning(enc, acked)] if w],
+                    + [w for w in [encryption_warning(enc, acked)] if w] + sync_warnings,
+        "connections": syncs,
         "encryption": {**enc, "acknowledged": acked} if enc else None,
         "recent": recent,
     }
