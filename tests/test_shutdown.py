@@ -3,6 +3,7 @@
 import asyncio
 import threading
 import time
+from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 from psycopg_pool import ConnectionPool
@@ -58,6 +59,9 @@ def test_shutdown_signals_jobs_and_waits_for_the_one_in_flight(settings, db, llm
 
     monkeypatch.setattr(app_module, "_rescan", slow_rescan)
     monkeypatch.setattr(app_module, "RESCAN_CHECK_S", 0)
+    # A just-booted machine: monotonic time starts near 0, yet the first rescan must still run (CI caught this).
+    t0 = time.monotonic()
+    monkeypatch.setattr(app_module, "time", SimpleNamespace(monotonic=lambda: time.monotonic() - t0 + 1.0))
     monkeypatch.setattr(app_module, "start_nightly", lambda *a: None)
     monkeypatch.setattr(app_module.encryption, "start_check", lambda: None)
     stopped_reread = []

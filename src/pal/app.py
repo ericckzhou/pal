@@ -138,11 +138,11 @@ async def _reminder_loop(app: FastAPI) -> None:
 
 async def _rescan_loop(app: FastAPI) -> None:
     """Check added folders for new or changed files. The interval is read each time, so a settings change applies."""
-    last = 0.0
+    last: float | None = None  # never run: the first check runs it (monotonic time can start near 0 after a boot)
     while True:
         await asyncio.sleep(RESCAN_CHECK_S)
         minutes = app.state.settings.rescan_minutes
-        if minutes == 0 or time.monotonic() - last < minutes * 60:
+        if minutes == 0 or (last is not None and time.monotonic() - last < minutes * 60):
             continue
         last = time.monotonic()
         try:
