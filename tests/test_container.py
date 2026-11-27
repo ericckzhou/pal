@@ -61,8 +61,24 @@ def test_settings_from_env(monkeypatch):
     assert set(_local_services(s)) == {"db", "ollama"}
 
 
+def test_settings_from_env_public_port(monkeypatch):
+    # Docker publishes pal on PAL_PORT on the host; the browser sends that port in Host and Origin.
+    monkeypatch.setenv("PAL_PUBLIC_PORT", "8766")
+    s = Settings.from_env()
+    assert s.allowed_hosts == ("127.0.0.1:8766", "localhost:8766")
+    assert "http://localhost:8766" in s.allowed_origins
+    assert "http://127.0.0.1:8765" not in s.allowed_origins
+
+
+@pytest.mark.parametrize("value", ["abc", "0", "70000"])
+def test_settings_from_env_rejects_bad_public_port(monkeypatch, value):
+    monkeypatch.setenv("PAL_PUBLIC_PORT", value)
+    with pytest.raises(SystemExit, match="PAL_PUBLIC_PORT"):
+        Settings.from_env()
+
+
 def test_settings_from_env_defaults_without_variables(monkeypatch):
-    for name in ("PAL_HOST", "PAL_DB_HOST", "PAL_DB_PORT", "PAL_OLLAMA_URL", "PAL_BACKUP_DIR"):
+    for name in ("PAL_HOST", "PAL_DB_HOST", "PAL_DB_PORT", "PAL_OLLAMA_URL", "PAL_BACKUP_DIR", "PAL_PUBLIC_PORT"):
         monkeypatch.delenv(name, raising=False)
     assert Settings.from_env() == Settings()
     assert _local_services(Settings()) == ()

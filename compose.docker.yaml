@@ -43,6 +43,7 @@ services:
     environment:
       PAL_DB_HOST: db
       PAL_OLLAMA_URL: http://ollama:11434
+      PAL_PUBLIC_PORT: ${PAL_PORT:-8765}  # the port your browser uses, for pal's Host/Origin checks
       PAL_PUBLIC_HOST: ${PAL_PUBLIC_HOST:-}  # your tailnet name, if you use Tailscale Serve on the host
     ports:
       - "127.0.0.1:${PAL_PORT:-8765}:8765"  # S1: loopback on the host only

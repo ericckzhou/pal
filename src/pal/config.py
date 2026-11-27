@@ -66,6 +66,12 @@ class Settings:
             values["ollama_url"] = env["PAL_OLLAMA_URL"].rstrip("/")
         if env.get("PAL_BACKUP_DIR"):
             values["backup_dir"] = Path(env["PAL_BACKUP_DIR"])
+        if env.get("PAL_PUBLIC_PORT"):
+            # The port the browser uses (Docker may publish pal on another host port than it listens on).
+            port = env["PAL_PUBLIC_PORT"]
+            if not port.isdigit() or not 1 <= int(port) <= 65535:
+                raise SystemExit(f"PAL_PUBLIC_PORT must be a port number (1-65535), not {port!r}.")
+            values["allowed_hosts"] = (f"127.0.0.1:{port}", f"localhost:{port}")
         return cls(**values)
 
     @property
