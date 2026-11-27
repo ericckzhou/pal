@@ -257,6 +257,7 @@ def create_app(settings: Settings | None = None, llm=None, start_background: boo
     app.include_router(dashboard_api.owner)
     app.include_router(connections_api.router)
     app.include_router(connections_api.events)
+    app.include_router(connections_api.google_return)
 
     if (WEB_DIST / "assets").is_dir():
         app.mount("/assets", StaticFiles(directory=WEB_DIST / "assets"), name="assets")

@@ -67,6 +67,10 @@ export default function Connections({ onAuthError }: Props) {
         .then((r) => {
           setReport(r);
           setLoadError("");
+          if (r.signin) {
+            setNotice(r.signin.ok ? r.signin.message : "");
+            setError(r.signin.ok ? "" : r.signin.message);
+          }
         })
         .catch((err) => {
           onAuthError(err);
@@ -114,8 +118,8 @@ export default function Connections({ onAuthError }: Props) {
       </header>
       <p className="muted small">
         Read-only access to your own Google account. What pal copies stays on this PC, and text from these services is
-        treated as information, never as instructions. You sign in from this PC's terminal, so no phone or other
-        device can start or change a connection.
+        treated as information, never as instructions. Signing in works only in a browser on this PC, so no phone or
+        other device can start a connection.
       </p>
       {!report.google_client && (
         <div className="memory-item conn-setup">
@@ -134,7 +138,7 @@ export default function Connections({ onAuthError }: Props) {
           return c ? (
             <Connected key={s.service} c={c} busy={busy} run={run} projects={projects} />
           ) : (
-            <NotConnected key={s.service} s={s} ready={report.google_client} />
+            <NotConnected key={s.service} s={s} ready={report.google_client} busy={busy} run={run} />
           );
         })}
       </ul>
@@ -142,7 +146,16 @@ export default function Connections({ onAuthError }: Props) {
   );
 }
 
-function NotConnected({ s, ready }: { s: ConnectableService; ready: boolean }) {
+// Off to Google in this tab; it comes back to /?view=connections, where the result shows once.
+async function signIn(service: GoogleService): Promise<string> {
+  const { url } = await api.googleStart(service);
+  window.location.assign(url);
+  return "Opening Google sign-in…";
+}
+
+type NotConnectedProps = { s: ConnectableService; ready: boolean; busy: boolean; run: Run };
+
+function NotConnected({ s, ready, busy, run }: NotConnectedProps) {
   return (
     <li className="memory-item">
       <p className="memory-text">
@@ -151,9 +164,17 @@ function NotConnected({ s, ready }: { s: ConnectableService; ready: boolean }) {
       <p className="small muted">{WHAT[s.service]}</p>
       <p className="small muted">pal will ask Google to {s.grants}.</p>
       <div className="memory-meta small">
-        <span className="muted">{ready ? "Connect from a terminal on this PC:" : "After storing the client:"}</span>
-        <Command text={s.command} />
+        <button className="small primary" disabled={busy || !ready} onClick={() => run(() => signIn(s.service))}>
+          Sign in with Google
+        </button>
+        {!ready && <span className="muted">Store the OAuth client first.</span>}
       </div>
+      {ready && (
+        <details className="small muted">
+          <summary>Or connect from a terminal</summary>
+          <Command text={s.command} />
+        </details>
+      )}
     </li>
   );
 }
@@ -182,7 +203,14 @@ function Connected({ c, busy, run, projects }: ConnectedProps) {
           </>
         )}
       </div>
-      {c.last_error && <p className="error small conn-error-text">{c.last_error}</p>}
+      {c.last_error && (
+        <div className="memory-meta small">
+          <p className="error small conn-error-text">{c.last_error}</p>
+          <button className="small" disabled={busy} onClick={() => run(() => signIn(c.service))} title="Fixes an expired or revoked sign-in">
+            Sign in again
+          </button>
+        </div>
+      )}
       {c.service === "drive" && <DriveFolders c={c} busy={busy} run={run} />}
       <div className="memory-meta small">
         {c.service === "drive" && (

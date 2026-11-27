@@ -51,7 +51,7 @@ def _explain(resp: httpx.Response, what: str) -> str:
     if resp.status_code == 403 and ("accessNotConfigured" in reasons or "SERVICE_DISABLED" in str(err)):
         return f"The {what} API isn't enabled in your Google Cloud project. Enable it, then sync again."
     if resp.status_code == 403 and reasons & {"insufficientPermissions", "ACCESS_TOKEN_SCOPE_INSUFFICIENT"}:
-        return f"pal wasn't granted {what} access. Run: pal connect google {what.split()[-1].lower()}"
+        return f"pal wasn't granted {what} access. Sign in again on the Connections page, or run: pal connect google {what.split()[-1].lower()}"
     if resp.status_code in (403, 429) and reasons & {"rateLimitExceeded", "userRateLimitExceeded", "quotaExceeded"}:
         return f"Google is limiting requests for {what} right now; pal will try again at the next sync."
     if resp.status_code == 404:
@@ -76,7 +76,7 @@ class GoogleAPI:
                 self._tokens.forget()
                 continue
             if resp.status_code == 401:
-                raise GoogleAuthError("Google rejected pal's sign-in. Run: pal connect google <service>")
+                raise GoogleAuthError("Google rejected pal's sign-in. Sign in again on the Connections page, or run: pal connect google <service>")
             if resp.status_code != 200:
                 raise GoogleAPIError(_explain(resp, self._what))
             return resp

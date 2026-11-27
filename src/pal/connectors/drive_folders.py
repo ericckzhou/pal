@@ -38,7 +38,7 @@ def _maybe_id(text: str) -> str | None:
 def drive_row(conn: psycopg.Connection) -> dict:
     row = next((r for r in store.list_all(conn) if (r["provider"], r["service"]) == ("google", "drive")), None)
     if row is None:
-        raise FolderError("Google Drive isn't connected. Run: pal connect google drive")
+        raise FolderError("Google Drive isn't connected. Connect it on the Connections page.")
     return row
 
 

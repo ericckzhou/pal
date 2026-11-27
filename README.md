@@ -158,7 +158,7 @@ pal can read your Google Calendar and Drive, and search Gmail when you ask. All 
 - **Drive:** pick folders on the **Connections** page (paste a folder link from Drive) or with `pal drive-folders add <folder link>`. Docs, Sheets, Slides, PDFs and text files in them, and in folders inside them, become searchable documents, grouped under "Google Drive" on the Documents page.
 - **Gmail:** in a chat on a local model, ask something like "did Priya email me about the deposit?". pal searches your mailbox, reads up to 5 matching messages, and answers from them. The emails are used for that one reply and never saved; the reply keeps only a link to each message it cited. pal doesn't search Gmail for writing, sending or how-to questions, never shares mail with Claude, and never acts on instructions inside an email. Untick **Search Gmail** above a chat (or type `/gmail off`) to stop it searching there.
 
-The **Connections** page (on the PC only) shows each service's state, when it last synced and any error, and lets you sync now, pause, pick Drive folders, choose a project for Drive files, or disconnect. Signing in itself happens in a terminal on the PC, so no phone or other device can start a connection.
+The **Connections** page (on the PC only) shows each service's state, when it last synced and any error, and lets you sync now, pause, pick Drive folders, choose a project for Drive files, or disconnect. It also has a **Sign in with Google** button for each service. Google sends the browser back to pal's own loopback address, so the button works only in a browser on the PC. A phone or other device can't start a connection. The terminal commands below do the same thing.
 
 You sign in with your own Google OAuth client, because a public repo can't ship one. It takes about 10 minutes, once:
 
@@ -166,7 +166,7 @@ You sign in with your own Google OAuth client, because a public repo can't ship 
 2. In **APIs & Services › OAuth consent screen**: choose **External**, fill in an app name and your email, and add yourself under **Test users**.
 3. Still on the consent screen, click **Publish app** so it shows **In production**. In "Testing", Google ends the sign-in every 7 days. Publishing does *not* get the app verified: Google shows an "unverified app" warning when you sign in. That's expected for a personal app; click **Advanced › Go to (your app)**. Google allows unverified apps for personal use, including Gmail's restricted permission.
 4. In **APIs & Services › Credentials**: **Create credentials › OAuth client ID**, type **Desktop app**. Download the JSON.
-5. Store it and connect one service at a time:
+5. Store it, then connect one service at a time, either with **Sign in with Google** on the Connections page or from a terminal:
 
 ```sh
 uv run pal google-client --set path/to/client.json   # then delete the downloaded file

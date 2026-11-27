@@ -168,6 +168,7 @@ export type ConnectionsReport = {
   google_client: boolean;
   client_command: string;
   services: ConnectableService[];
+  signin: { ok: boolean; message: string } | null; // the last page sign-in's result, shown once
 };
 export type SyncResult = { status: "ok" | "failed" | "stopped" | "busy" | "skipped"; [k: string]: string | number };
 
@@ -507,6 +508,8 @@ export const api = {
   resetSetting: (key: string) => call<SettingsReport>(`/api/settings/${key}`, { method: "DELETE" }),
   allReminders: () => call<Reminder[]>("/api/reminders?include_done=true"),
   connections: () => call<ConnectionsReport>("/api/connections"),
+  googleStart: (service: GoogleService) =>
+    call<{ url: string }>("/api/connections/google/start", { method: "POST", body: JSON.stringify({ service }) }),
   syncConnection: (id: string) => call<SyncResult>(`/api/connections/${id}/sync`, { method: "POST" }),
   patchConnection: (id: string, patch: { enabled?: boolean; project_id?: string | null }) =>
     call<Connection>(`/api/connections/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),

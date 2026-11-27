@@ -23,6 +23,12 @@ const VIEW_KEY = "pal.view";
 const PC_ONLY: View[] = ["logs", "settings", "devices", "connections"];
 
 function loadView(): View {
+  // Google sign-in returns to /?view=connections; take it once and tidy the address bar.
+  const asked = new URLSearchParams(window.location.search).get("view");
+  if (asked === "connections") {
+    window.history.replaceState(null, "", window.location.pathname + window.location.hash);
+    return "connections";
+  }
   try {
     const v = localStorage.getItem(VIEW_KEY) as View | null;
     if (v) return v;

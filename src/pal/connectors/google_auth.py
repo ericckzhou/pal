@@ -169,7 +169,7 @@ def _token_request(http: httpx.Client, form: dict) -> dict:
         raise GoogleAuthError(f"Couldn't reach Google ({type(exc).__name__}). Check the internet connection.") from exc
     data = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {}
     if resp.status_code == 400 and data.get("error") == "invalid_grant":
-        raise SignInExpired("Google no longer accepts pal's sign-in. Run: pal connect google <service>")
+        raise SignInExpired("Google no longer accepts pal's sign-in. Sign in again on the Connections page, or run: pal connect google <service>")
     if resp.status_code != 200 or "access_token" not in data:
         raise GoogleAuthError(f"Google refused the request: {data.get('error_description') or data.get('error') or resp.status_code}")
     return data
@@ -206,9 +206,17 @@ def sign_in(
     result = handler.result
     if result.get("state") != state:
         raise GoogleAuthError("The sign-in answer didn't match this request, so pal ignored it. Try again.")
+    return finish(client, service, result, verifier, redirect_uri, http)
+
+
+def finish(client: Client, service: str, result: dict[str, str], verifier: str, redirect_uri: str,
+           http: httpx.Client) -> Grant:
+    """Turn Google's answer (state already checked) into a grant, refusing a cancel or a missing scope."""
     if "error" in result:
         raise GoogleAuthError("Sign-in was cancelled." if result["error"] == "access_denied"
                               else f"Google returned an error: {result['error']}")
+    if not result.get("code"):
+        raise GoogleAuthError("Google's answer had no sign-in code. Try again.")
     data = _token_request(http, {
         "code": result["code"], "client_id": client.client_id, "client_secret": client.client_secret,
         "redirect_uri": redirect_uri, "grant_type": "authorization_code", "code_verifier": verifier,
@@ -243,7 +251,7 @@ class Tokens:
             client = self._client or load_client()
             refresh = self._refresh_token or secret_store.get(TOKEN_ACCOUNT)
             if client is None or refresh is None:
-                raise SignInExpired("pal isn't signed in to Google. Run: pal connect google <service>")
+                raise SignInExpired("pal isn't signed in to Google. Sign in again on the Connections page, or run: pal connect google <service>")
             grant = _grant(_token_request(self._http, {
                 "client_id": client.client_id, "client_secret": client.client_secret,
                 "refresh_token": refresh, "grant_type": "refresh_token",

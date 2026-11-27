@@ -1,7 +1,7 @@
 """Command-line side of Google connections: google-client, connect, disconnect, connections.
 
-Signing in happens here rather than in the web UI: it needs a browser on this PC and a short-lived local port, and
-keeping it on the command line means a phone session can never start or change a Google connection.
+`pal connect` is the terminal way to sign in (and the only one for headless setups); the Connections page has a
+"Sign in with Google" button too (connectors/google_web.py). Both work only on this PC.
 """
 
 import argparse
