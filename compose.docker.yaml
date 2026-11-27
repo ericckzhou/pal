@@ -45,8 +45,12 @@ services:
       PAL_OLLAMA_URL: http://ollama:11434
       PAL_PUBLIC_PORT: ${PAL_PORT:-8765}  # the port your browser uses, for pal's Host/Origin checks
       PAL_PUBLIC_HOST: ${PAL_PUBLIC_HOST:-}  # your tailnet name, if you use Tailscale Serve on the host
+      PAL_OAUTH_PORT: ${PAL_OAUTH_PORT:-8766}  # where `pal connect google ...` waits for Google's answer
     ports:
       - "127.0.0.1:${PAL_PORT:-8765}:8765"  # S1: loopback on the host only
+      # Google sign-in: Google sends the browser back to http://127.0.0.1:<port>, so the port is the same on both
+      # sides. Nothing listens on it except while a `connect` command is waiting.
+      - "127.0.0.1:${PAL_OAUTH_PORT:-8766}:${PAL_OAUTH_PORT:-8766}"
     volumes:
       - ${PAL_HOME}/secrets:/run/pal-secrets  # DB password, backup key, optional Anthropic key (one file each)
       - ${PAL_HOME}/data:/data                # encrypted backups, Docling models, kept uploads

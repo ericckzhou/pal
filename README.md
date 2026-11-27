@@ -150,9 +150,15 @@ uv run pal claude-key --set
 
 Restart pal, and the Claude models show up in the model picker above the chat box. Chats that use a local model stay fully offline. To remove the key, run `uv run pal claude-key --clear`.
 
-### Connecting Google (optional, in progress)
+### Connecting Google (optional)
 
-pal can read your Google Calendar and Drive, and search Gmail when you ask. All of it is read-only. Calendar and Drive are copied into pal's own database on this PC; Gmail is never copied, only searched. Nothing goes to any server run by pal; there isn't one. *Calendar works now: events show on the Schedule page, in the morning brief, and in answers to questions like "what's on Thursday?" (pal says what it sees on your connected calendars, never that you're free). Drive works too: pick folders with `pal drive-folders add <folder link>`; Docs, Sheets, Slides, PDFs and text files in them (and in folders inside them) become searchable documents. Gmail works as well: in a chat on a local model, ask something like "did Priya email me about the deposit?" and pal searches your mailbox, reads up to 5 matching messages, and answers from them. The emails are used for that one reply and never saved: the reply keeps only a link to each message it cited. pal doesn't search Gmail for writing, sending or how-to questions, never shares mail with Claude, and never acts on instructions inside an email. Type `/gmail off` to stop it searching in a chat.*
+pal can read your Google Calendar and Drive, and search Gmail when you ask. All of it is read-only. Calendar and Drive are copied into pal's own database on this PC; Gmail is never copied, only searched. Nothing goes to any server run by pal; there isn't one.
+
+- **Calendar:** events show on the Schedule page, in the morning brief and the weekly digest, and in answers to questions like "what's on Thursday?". pal says what it sees on your connected calendars, never that you're free.
+- **Drive:** pick folders on the **Connections** page (paste a folder link from Drive) or with `pal drive-folders add <folder link>`. Docs, Sheets, Slides, PDFs and text files in them, and in folders inside them, become searchable documents, grouped under "Google Drive" on the Documents page.
+- **Gmail:** in a chat on a local model, ask something like "did Priya email me about the deposit?". pal searches your mailbox, reads up to 5 matching messages, and answers from them. The emails are used for that one reply and never saved; the reply keeps only a link to each message it cited. pal doesn't search Gmail for writing, sending or how-to questions, never shares mail with Claude, and never acts on instructions inside an email. Untick **Search Gmail** above a chat (or type `/gmail off`) to stop it searching there.
+
+The **Connections** page (on the PC only) shows each service's state, when it last synced and any error, and lets you sync now, pause, pick Drive folders, choose a project for Drive files, or disconnect. Signing in itself happens in a terminal on the PC, so no phone or other device can start a connection.
 
 You sign in with your own Google OAuth client, because a public repo can't ship one. It takes about 10 minutes, once:
 
@@ -169,7 +175,14 @@ uv run pal connections                               # what's connected and when
 uv run pal disconnect google calendar                # or "all"
 ```
 
-pal asks Google only for the service you're connecting. Google's Drive permission covers your whole Drive, even though pal syncs only the folders you pick. If you untick the permission on Google's screen, nothing is connected. Disconnecting deletes everything pal synced from that service. When the last Google service is disconnected, pal also tells Google to end its access. Google can't take back a single permission on its own, so until then the grant stays listed at [myaccount.google.com/permissions](https://myaccount.google.com/permissions). Signing in on the Docker setup isn't supported yet.
+pal asks Google only for the service you're connecting. Google's Drive permission covers your whole Drive, even though pal syncs only the folders you pick. If you untick the permission on Google's screen, nothing is connected. Disconnecting deletes everything pal synced from that service. When the last Google service is disconnected, pal also tells Google to end its access. Google can't take back a single permission on its own, so until then the grant stays listed at [myaccount.google.com/permissions](https://myaccount.google.com/permissions).
+
+On the Docker setup, use the helper script instead. The container can't open your browser, so it prints the sign-in link; open it on the same computer. Google sends the browser back to `http://127.0.0.1:8766`, which compose publishes on the host's loopback only (change it with `PAL_OAUTH_PORT`).
+
+```sh
+bash scripts/pal-docker.sh google-client path/to/client.json
+bash scripts/pal-docker.sh connect calendar          # or drive, or gmail
+```
 
 ### Running with Docker (Linux and Mac)
 

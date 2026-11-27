@@ -13,6 +13,9 @@ function folderName(path: string): string {
   return path.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || path;
 }
 
+const DRIVE = "google-drive:";
+const fromDrive = (d: Doc) => d.source_path?.startsWith(DRIVE) ?? false;
+
 /** The file's path inside its folder, e.g. probes\probe-07\README.md */
 function relativePath(d: Doc): string {
   if (d.folder && d.source_path?.startsWith(d.folder)) return d.source_path.slice(d.folder.length).replace(/^[\\/]+/, "");
@@ -106,8 +109,10 @@ export default function Documents({ embedded = false, projectId = null, onAuthEr
 
   const folders = new Map<string, Doc[]>();
   const loose: Doc[] = [];
+  const drive: Doc[] = [];
   for (const d of projectId ? docs.filter((x) => x.project_id === projectId) : docs) {
-    if (d.folder) folders.set(d.folder, [...(folders.get(d.folder) ?? []), d]);
+    if (fromDrive(d)) drive.push(d);
+    else if (d.folder) folders.set(d.folder, [...(folders.get(d.folder) ?? []), d]);
     else loose.push(d);
   }
   const folderList = [...folders.entries()].sort(([a], [b]) => folderName(a).localeCompare(folderName(b)));
@@ -145,11 +150,12 @@ export default function Documents({ embedded = false, projectId = null, onAuthEr
       {!embedded && <DocProcessing onProgress={load} onAuthError={onAuthError} />}
 
       <ul className="memory-list">
-        {folderList.length + loose.length === 0 && <li className="muted">{projectId ? "No documents in this project." : "No documents yet."}</li>}
+        {folderList.length + loose.length + drive.length === 0 && <li className="muted">{projectId ? "No documents in this project." : "No documents yet."}</li>}
         {folderList.map(([folder, items]) => (
           <FolderItem key={folder} folder={folder} items={items} busy={busy} run={run} projects={projects} onRescan={() => scan(folder)} />
         ))}
-        {loose.length > 0 && folderList.length > 0 && <li className="small muted section">Uploaded and single files</li>}
+        {drive.length > 0 && <DriveGroup items={drive} run={run} projects={projects} />}
+        {loose.length > 0 && folderList.length + drive.length > 0 && <li className="small muted section">Uploaded and single files</li>}
         {loose.map((d) => (
           <DocItem key={d.id} d={d} label={d.source_path ? d.filename : "uploaded"} run={run} projects={projects} />
         ))}
@@ -221,9 +227,40 @@ function FolderItem({ folder, items, busy, run, projects, onRescan }: FolderProp
   );
 }
 
-type DocProps = { d: Doc; label: string; run: Run; projects: Project[]; compact?: boolean };
+function DriveGroup({ items, run, projects }: { items: Doc[]; run: Run; projects: Project[] }) {
+  const [open, setOpen] = useState(false);
+  const parts = items.reduce((n, d) => n + d.chunk_count, 0);
+  const pending = items.reduce((n, d) => n + d.pending, 0);
+  const size = items.reduce((n, d) => n + d.size_bytes, 0);
+  const sorted = [...items].sort((a, b) => a.title.localeCompare(b.title));
+  return (
+    <li className="memory-item folder drive-group">
+      <button className="link folder-head" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+        <span aria-hidden>{open ? "▾" : "▸"}</span> <strong>☁ Google Drive</strong>
+      </button>
+      <div className="memory-meta small muted">
+        <span>
+          {items.length} file{items.length === 1 ? "" : "s"}
+        </span>
+        <span>{kb(size)}</span>
+        <span>{progress(parts, pending)}</span>
+        <span className="spacer" />
+        <span>Synced read-only. Pick folders, or disconnect, on the Connections page.</span>
+      </div>
+      {open && (
+        <ul className="memory-list folder-files">
+          {sorted.map((d) => (
+            <DocItem key={d.id} d={d} label={d.filename} run={run} projects={projects} compact synced />
+          ))}
+        </ul>
+      )}
+    </li>
+  );
+}
 
-function DocItem({ d, label, run, projects, compact = false }: DocProps) {
+type DocProps = { d: Doc; label: string; run: Run; projects: Project[]; compact?: boolean; synced?: boolean };
+
+function DocItem({ d, label, run, projects, compact = false, synced = false }: DocProps) {
   const [confirm, setConfirm] = useState(false);
   return (
     <li className={compact ? "doc-row" : "memory-item"}>
@@ -241,7 +278,7 @@ function DocItem({ d, label, run, projects, compact = false }: DocProps) {
           projects={projects}
           onChange={(id) => run("Updating…", async () => (await api.setDocumentProject(d.id, id), "Updated."))}
         />
-        {confirm ? (
+        {synced ? null : confirm ? (
           <>
             <button className="danger small" onClick={() => run("Deleting…", async () => (await api.deleteDocument(d.id), "Deleted."))}>
               Delete

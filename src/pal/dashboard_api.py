@@ -230,6 +230,7 @@ class ConversationPatch(BaseModel):
     model: str | None = Field(default=None, max_length=100)
     thinking: Literal["off", "low", "medium", "high"] | None = None
     claude_context: bool | None = None  # a Claude chat also sends matching memories, documents and notes
+    gmail: bool | None = None  # pal may search Gmail in this chat (local models only)
 
     @field_validator("title")
     @classmethod
@@ -271,7 +272,10 @@ def patch_conversation(conv_id: UUID, body: ConversationPatch, request: Request)
             conn.execute("UPDATE conversations SET thinking = %s WHERE id = %s", (body.thinking, conv_id))
         if "claude_context" in fields and body.claude_context is not None:
             conn.execute("UPDATE conversations SET claude_context = %s WHERE id = %s", (body.claude_context, conv_id))
-        return _rows(conn, "SELECT id, title, updated_at, project_id, model, thinking, claude_context FROM conversations WHERE id = %s",
+        if "gmail" in fields and body.gmail is not None:
+            conn.execute("UPDATE conversations SET gmail = %s WHERE id = %s", (body.gmail, conv_id))
+        return _rows(conn, "SELECT id, title, updated_at, project_id, model, thinking, claude_context, gmail "
+                           "FROM conversations WHERE id = %s",
                      (conv_id,))[0]
 
 

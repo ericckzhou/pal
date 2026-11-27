@@ -14,7 +14,8 @@ export type View =
   | "analytics"
   | "logs"
   | "settings"
-  | "devices";
+  | "devices"
+  | "connections";
 
 type Item = { view: View; label: string; pcOnly?: boolean };
 // Memory and Documents live inside Projects; their nav entry stays lit while one of them is open.
@@ -39,6 +40,7 @@ const GROUPS: { title: string; items: Item[] }[] = [
       { view: "logs", label: "Logs", pcOnly: true },
       { view: "settings", label: "Settings", pcOnly: true },
       { view: "devices", label: "Devices", pcOnly: true },
+      { view: "connections", label: "Connections", pcOnly: true },
     ],
   },
 ];

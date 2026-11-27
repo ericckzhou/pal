@@ -110,3 +110,14 @@ def remove(conn: psycopg.Connection, connection_id: UUID) -> int:
         ).rowcount
         conn.execute("DELETE FROM connections WHERE id = %s", (connection_id,))
     return docs
+
+
+def set_project(conn: psycopg.Connection, connection_id: UUID, project_id: UUID | None) -> int:
+    """Put a connection (and every document it already brought in) in a project, or none. Returns documents moved."""
+    with conn.transaction():
+        conn.execute("UPDATE connections SET project_id = %s WHERE id = %s", (project_id, connection_id))
+        return conn.execute(
+            "UPDATE documents SET project_id = %s WHERE id IN "
+            "(SELECT document_id FROM connector_items WHERE connection_id = %s)",
+            (project_id, connection_id),
+        ).rowcount

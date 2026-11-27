@@ -160,9 +160,10 @@ def create_conversation(request: Request) -> dict:
 def get_conversation(conv_id: UUID, request: Request) -> dict:
     with request.app.state.pool.connection() as conn:
         conv = conversations.get_conversation(conn, conv_id)
+        gmail_connected = mail.connected(conn)
     if conv is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
-    return conv
+    return {**conv, "gmail_connected": gmail_connected}  # the chat shows its Gmail switch only when it can matter
 
 
 @private.get("/messages/{message_id}/trace")

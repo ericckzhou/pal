@@ -164,6 +164,10 @@ export default function DigestPage({ onView, onAuthError }: Props) {
               items={b.overdue.map((t) => ({ key: t.id, main: t.title, badge: t.project, meta: t.due_date ? `was due ${day(t.due_date)}` : undefined }))} />
             <List title="Reminders coming up" icon="bolt" empty="No reminders this week."
               items={b.upcoming_reminders.map((r) => ({ key: r.id, main: r.title, badge: r.project, meta: dateTime(r.due_at) }))} />
+            {b.calendar && (
+              <List title="On your calendar this week" icon="schedule" empty="Nothing on your connected calendars."
+                items={b.calendar.map((e) => ({ key: e.id, main: e.title, meta: e.when }))} />
+            )}
             <List title="Projects" icon="work" empty="No active projects."
               items={b.projects.map((p) => ({ key: p.name, main: p.name, meta: `${p.done} done · ${p.open} open` }))} />
             <List title="Neglected" icon="flag" empty="Nothing neglected."

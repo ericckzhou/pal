@@ -5,7 +5,7 @@ keeping it on the command line means a phone session can never start or change a
 """
 
 import argparse
-import re
+import os
 import webbrowser
 from pathlib import Path
 
@@ -14,7 +14,7 @@ import psycopg
 
 from .. import secret_store
 from ..config import Settings, dsn, in_container
-from . import google, google_auth, store
+from . import drive_folders, google, google_auth, store
 
 SERVICES = tuple(google_auth.SCOPES)
 DISCLOSURE = {
@@ -77,6 +77,14 @@ def cmd_google_client(client_file: str | None, clear: bool) -> None:
               "No Google OAuth client is stored. See the README's \"Connect Google\" section.")
 
 
+def oauth_port() -> int:
+    """The fixed sign-in port Docker publishes (compose.docker.yaml), from PAL_OAUTH_PORT."""
+    try:
+        return int(os.environ.get("PAL_OAUTH_PORT", "8766"))
+    except ValueError as exc:
+        raise SystemExit("PAL_OAUTH_PORT must be a port number.") from exc
+
+
 def cmd_connect(settings: Settings, service: str, no_browser: bool, port: int) -> None:
     client = google_auth.load_client()
     if client is None:
@@ -90,6 +98,8 @@ def cmd_connect(settings: Settings, service: str, no_browser: bool, port: int) -
             print("A browser window opened for Google sign-in. Waiting for you to finish…")
 
     host = "0.0.0.0" if in_container() else "127.0.0.1"  # in Docker the published port must reach the container
+    if in_container() and not port:  # a random port inside the container isn't published, so Google's answer is lost
+        port = oauth_port()
     with httpx.Client() as http:
         try:
             grant = google_auth.sign_in(client, service, http, open_browser, host=host, port=port)
@@ -132,63 +142,32 @@ def cmd_connections(settings: Settings) -> None:
               f"last synced {last}{err}")
 
 
-_FOLDER_LINK = re.compile(r"(?:/folders/|[?&]id=)([A-Za-z0-9_-]{10,})")
-_FOLDER_ID = re.compile(r"^[A-Za-z0-9_-]{10,}$")
-
-
 def folder_id(text: str) -> str:
-    """The folder id from a Drive link like https://drive.google.com/drive/folders/<id>, or a bare id."""
-    m = _FOLDER_LINK.search(text)
-    if m:
-        return m.group(1)
-    if _FOLDER_ID.match(text.strip()):
-        return text.strip()
-    raise SystemExit("That isn't a Drive folder link. Open the folder in Drive and copy the address bar.")
-
-
-def _drive_row(conn: psycopg.Connection) -> dict:
-    row = next((r for r in store.list_all(conn) if (r["provider"], r["service"]) == ("google", "drive")), None)
-    if row is None:
-        raise SystemExit("Google Drive isn't connected. Run: pal connect google drive")
-    return row
+    """The folder id from a Drive link, or a bare id (exits with a message otherwise)."""
+    try:
+        return drive_folders.folder_id(text)
+    except drive_folders.FolderError as exc:
+        raise SystemExit(str(exc)) from exc
 
 
 def cmd_drive_folders(settings: Settings, action: str, folder: str | None, api=None) -> None:
-    from . import gdrive, google_api
-
     with psycopg.connect(dsn(settings), autocommit=True) as conn:
-        row = _drive_row(conn)
-        folders = [f for f in row["config"].get("folders") or [] if isinstance(f, dict)]
-        if action == "list":
-            if not folders:
-                print("No folders chosen. Add one: pal drive-folders add <folder link>")
-            for f in folders:
-                print(f"{f['name']}  ({f['id']})")
-            return
-        if not folder:
-            raise SystemExit(f"Say which folder: pal drive-folders {action} <folder link>")
-        if action == "add":
-            fid = folder_id(folder)
-            if any(f["id"] == fid for f in folders):
-                raise SystemExit("That folder is already chosen.")
-            api = api or google_api.GoogleAPI(google_api.shared_tokens(), google_api.shared_client(), "Google Drive")
-            try:
-                meta = api.get(f"{gdrive.API}/files/{fid}", {"fields": "id,name,mimeType,trashed"})
-            except (google_api.GoogleAPIError, google_auth.GoogleAuthError) as exc:
-                raise SystemExit(str(exc)) from exc
-            if meta.get("mimeType") != gdrive.FOLDER or meta.get("trashed"):
-                raise SystemExit("That link is a file, not a folder (or it's in the trash).")
-            folders.append({"id": meta["id"], "name": meta.get("name") or meta["id"]})
-            print(f"Added {folders[-1]['name']}. pal syncs it and the folders inside it at the next sync.")
-        else:
-            keep = [f for f in folders if folder not in (f["id"], f["name"]) and f["id"] != _maybe_id(folder)]
-            if len(keep) == len(folders):
-                raise SystemExit("That folder isn't chosen. See: pal drive-folders list")
-            folders = keep
-            print("Removed. Its files leave pal at the next sync.")
-        store.set_config(conn, row["id"], {**row["config"], "folders": folders})
-
-
-def _maybe_id(text: str) -> str | None:
-    m = _FOLDER_LINK.search(text)
-    return m.group(1) if m else None
+        try:
+            row = drive_folders.drive_row(conn)
+            if action == "list":
+                folders = drive_folders.listed(row)
+                if not folders:
+                    print("No folders chosen. Add one: pal drive-folders add <folder link>")
+                for f in folders:
+                    print(f"{f['name']}  ({f['id']})")
+                return
+            if not folder:
+                raise SystemExit(f"Say which folder: pal drive-folders {action} <folder link>")
+            if action == "add":
+                added = drive_folders.add(conn, row, folder, api)
+                print(f"Added {added['name']}. pal syncs it and the folders inside it at the next sync.")
+            else:
+                drive_folders.remove(conn, row, folder)
+                print("Removed. Its files leave pal at the next sync.")
+        except drive_folders.FolderError as exc:
+            raise SystemExit(str(exc)) from exc

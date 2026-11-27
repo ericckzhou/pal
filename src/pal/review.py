@@ -12,6 +12,7 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
+from . import calendar
 from .reminders import aware, local_now
 
 STALE_DAYS = 14          # an open task with no due date, untouched this long, is neglected
@@ -118,6 +119,10 @@ def build_digest(conn: psycopg.Connection, monday: date) -> dict:
         (SELECT count(*) FROM messages WHERE role = 'user'
            AND created_at >= %(start)s AND created_at < %(end)s) AS messages_sent""", p)[0]
     attention = neglected(conn, monday)
+    events = None  # no calendar connected: the page leaves the section out rather than claim a free week
+    if calendar.connected(conn):
+        events = [{"id": str(e["id"]), "title": e["title"], "when": calendar.describe(e), "day": e["day"].isoformat(),
+                   "all_day": e["all_day"]} for e in calendar.between(conn, monday, monday + timedelta(days=7))][:LIST_LIMIT]
     body = {
         "period": {"start": start.isoformat(), "end": (end - timedelta(days=1)).isoformat()},
         "counts": counts,
@@ -125,6 +130,7 @@ def build_digest(conn: psycopg.Connection, monday: date) -> dict:
         "due_this_week": due,
         "overdue": overdue,
         "upcoming_reminders": upcoming,
+        "calendar": events,
         "projects": [r for r in projects if r["done"] or r["open"]],
         "neglected": {"tasks": attention["tasks"][:10], "projects": attention["projects"][:10]},
     }

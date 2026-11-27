@@ -579,3 +579,21 @@ button.board-card-title { display: block; width: 100%; text-align: left; border:
 .calendar-list li.tentative { border-style: dashed; }
 .calendar-when { font-variant-numeric: tabular-nums; min-width: 11rem; color: var(--muted); }
 .calendar-title { font-weight: 500; }
+
+/* Connections page */
+.conn-cmd { display: inline-flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+.conn-cmd code { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 0.15rem 0.45rem; }
+.conn-cmd button { padding: 0.15rem 0.55rem; }
+.conn-setup { border-color: var(--accent); }
+.conn.conn-error { border-color: var(--danger); }
+.conn.conn-paused { opacity: 0.75; }
+.conn-state.conn-on { border-color: var(--accent); color: var(--accent); }
+.conn-state.conn-error { border-color: var(--danger); color: var(--danger); }
+.conn-error-text { margin: 0; overflow-wrap: anywhere; }
+.conn-folders { display: grid; gap: 0.4rem; }
+.conn-folder-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.25rem; }
+.conn-folder-list li { display: flex; align-items: center; gap: 0.4rem; }
+.conn-folder-list button { margin-left: auto; padding: 0.15rem 0.55rem; }
+.notice-inline { margin: 0; color: var(--warn); }
+.chat-toggle { display: inline-flex; align-items: center; gap: 0.35rem; cursor: pointer; color: var(--muted); white-space: nowrap; }
+.chat-toggle input { width: auto; margin: 0; }

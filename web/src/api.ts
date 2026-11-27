@@ -6,6 +6,8 @@ export type Conversation = {
   model?: string | null;
   thinking?: ThinkingLevel | null;
   claude_context?: boolean; // a Claude chat also sends matching memories, documents and notes (opt-in)
+  gmail?: boolean; // pal may search Gmail in this chat (local models only)
+  gmail_connected?: boolean;
   message_count?: number;
 };
 export const THINKING_LEVELS = ["off", "low", "medium", "high"] as const;
@@ -143,6 +145,32 @@ export type CalendarEvent = {
   start: string | null;
 };
 
+export type GoogleService = "calendar" | "drive" | "gmail";
+export type Connection = {
+  id: string;
+  provider: "google";
+  service: GoogleService;
+  account: string | null;
+  scopes: string[];
+  enabled: boolean;
+  project_id: string | null;
+  config: { folders?: DriveFolder[] };
+  last_sync_at: string | null;
+  last_ok_at: string | null;
+  last_error: string | null;
+  created_at: string;
+  items: number;
+};
+export type DriveFolder = { id: string; name: string };
+export type ConnectableService = { provider: "google"; service: GoogleService; grants: string; command: string };
+export type ConnectionsReport = {
+  connections: Connection[];
+  google_client: boolean;
+  client_command: string;
+  services: ConnectableService[];
+};
+export type SyncResult = { status: "ok" | "failed" | "stopped" | "busy" | "skipped"; [k: string]: string | number };
+
 export type Reminder = {
   id: string;
   title: string;
@@ -245,6 +273,7 @@ export type DigestBody = {
   due_this_week: DigestTask[];
   overdue: DigestTask[];
   upcoming_reminders: { id: string; title: string; due_at: string; project: string | null }[];
+  calendar?: { id: string; title: string; when: string; day: string; all_day: boolean }[] | null; // null: no calendar
   projects: { name: string; done: number; open: number }[];
   neglected: { tasks: NeglectedTask[]; projects: QuietProject[] };
 };
@@ -465,7 +494,7 @@ export const api = {
   status: () => call<Status>("/api/status"),
   models: () => call<ModelList>("/api/models"),
   sessions: (q = "") => call<SessionRow[]>(`/api/sessions?q=${encodeURIComponent(q)}`),
-  patchConversation: (id: string, patch: { title?: string; model?: string | null; thinking?: ThinkingLevel | null; claude_context?: boolean }) =>
+  patchConversation: (id: string, patch: { title?: string; model?: string | null; thinking?: ThinkingLevel | null; claude_context?: boolean; gmail?: boolean }) =>
     call<Conversation>(`/api/conversations/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
   bulkDelete: (ids: string[]) =>
     call<{ removed: number }>("/api/conversations/bulk-delete", { method: "POST", body: JSON.stringify({ ids }) }),
@@ -477,6 +506,16 @@ export const api = {
     call<SettingsReport>("/api/settings", { method: "PUT", body: JSON.stringify(changes) }),
   resetSetting: (key: string) => call<SettingsReport>(`/api/settings/${key}`, { method: "DELETE" }),
   allReminders: () => call<Reminder[]>("/api/reminders?include_done=true"),
+  connections: () => call<ConnectionsReport>("/api/connections"),
+  syncConnection: (id: string) => call<SyncResult>(`/api/connections/${id}/sync`, { method: "POST" }),
+  patchConnection: (id: string, patch: { enabled?: boolean; project_id?: string | null }) =>
+    call<Connection>(`/api/connections/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
+  disconnect: (id: string) =>
+    call<{ documents_removed: number; revoked: boolean | null; note: string | null }>(`/api/connections/${id}`, { method: "DELETE" }),
+  addDriveFolder: (id: string, link: string) =>
+    call<{ added: DriveFolder; folders: DriveFolder[] }>(`/api/connections/${id}/folders`, { method: "POST", body: JSON.stringify({ link }) }),
+  removeDriveFolder: (id: string, folderId: string) =>
+    call<{ folders: DriveFolder[] }>(`/api/connections/${id}/folders/${encodeURIComponent(folderId)}`, { method: "DELETE" }),
   calendarEvents: (days = 14) => call<{ connected: boolean; events: CalendarEvent[] }>(`/api/calendar/events?days=${days}`),
   pauseReminder: (id: string) => call<Reminder>(`/api/reminders/${id}/pause`, { method: "POST" }),
   resumeReminder: (id: string) => call<Reminder>(`/api/reminders/${id}/resume`, { method: "POST" }),

@@ -80,6 +80,8 @@ export default function Chat({
   const [model, setModel] = useState<string | null>(null);
   const [thinking, setThinking] = useState<ThinkingLevel | null>(null);
   const [claudeContext, setClaudeContext] = useState(false);
+  const [gmail, setGmail] = useState(true);
+  const [gmailConnected, setGmailConnected] = useState(false);
   const idRef = useRef<string | null>(convId);
   const endRef = useRef<HTMLDivElement>(null);
 
@@ -99,11 +101,14 @@ export default function Chat({
         setModel(c.model ?? null);
         setThinking(c.thinking ?? null);
         setClaudeContext(Boolean(c.claude_context));
+        setGmail(c.gmail ?? true);
+        setGmailConnected(Boolean(c.gmail_connected));
       }).catch(onAuthError);
     else {
       setModel(newChatModel);
       setThinking(null);
       setClaudeContext(false);
+      setGmailConnected(false);
     }
   }, [convId, listVersion, newChatModel, onAuthError]);
 
@@ -239,6 +244,19 @@ export default function Chat({
     }
   };
 
+  const changeGmail = async (on: boolean) => {
+    if (!idRef.current) return;
+    setError("");
+    setGmail(on); // flip at once; put it back if the save fails
+    try {
+      await api.patchConversation(idRef.current, { gmail: on });
+    } catch (err) {
+      setGmail(!on);
+      onAuthError(err);
+      setError("Could not change whether this chat searches Gmail.");
+    }
+  };
+
   const changeThinking = async (value: string) => {
     const level = (value || null) as ThinkingLevel | null;
     setThinking(level);
@@ -280,6 +298,12 @@ export default function Chat({
         <button className="icon-btn rail-toggle" onClick={onToggleRail} aria-label="Show chats" title="Chats">
           <Icon name="rail" />
         </button>
+        {convId && gmailConnected && !isClaude(model) && (
+          <label className="chat-toggle" title="When on, pal searches your Gmail (read-only) when you ask about mail. Nothing from Gmail is stored.">
+            <input type="checkbox" checked={gmail} onChange={(e) => changeGmail(e.target.checked)} />
+            Search Gmail
+          </label>
+        )}
       </div>
       {isClaude(model) && (
         <p className="cloud-banner small" role="status">

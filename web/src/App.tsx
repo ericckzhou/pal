@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api, ApiError, Me, Pressure, Status as StatusData } from "./api";
 import Analytics from "./Analytics";
 import Chat from "./Chat";
+import Connections from "./Connections";
 import ChatRail from "./ChatRail";
 import Devices from "./Devices";
 import DigestPage from "./Digest";
@@ -19,7 +20,7 @@ import { applyTheme, loadTheme, Theme } from "./theme";
 import Work, { Section } from "./Work";
 
 const VIEW_KEY = "pal.view";
-const PC_ONLY: View[] = ["logs", "settings", "devices"];
+const PC_ONLY: View[] = ["logs", "settings", "devices", "connections"];
 
 function loadView(): View {
   try {
@@ -164,6 +165,8 @@ export default function App() {
           <SettingsPage onAuthError={onAuthError} onSaved={() => api.status().then(setStatus).catch(onAuthError)} />
         ) : shown === "devices" ? (
           <Devices remoteUrl={me?.remote_url ?? null} onAuthError={onAuthError} />
+        ) : shown === "connections" ? (
+          <Connections onAuthError={onAuthError} />
         ) : shown === "tasks" ? (
           <TaskBoard version={workVersion} onAuthError={onAuthError} />
         ) : shown === "work" || shown === "memory" || shown === "documents" ? (

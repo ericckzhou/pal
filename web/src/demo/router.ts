@@ -90,6 +90,23 @@ const settingsReport = () => ({
   fields: state.settings, allowed_models: ["qwen3.5:4b", "llama3.2:3b"], installed_models: ["qwen3.5:4b", "llama3.2:3b", "nomic-embed-text"],
 });
 
+// Made-up connections: nothing reaches Google from the demo.
+const demoConnections = {
+  google_client: true,
+  client_command: "pal google-client --set client.json",
+  services: (["calendar", "drive", "gmail"] as const).map((service) => ({
+    provider: "google", service, command: `pal connect google ${service}`,
+    grants: { calendar: "read your Google Calendar events (read-only)",
+              drive: "read every file in your Google Drive (read-only; pal only syncs the folders you pick)",
+              gmail: "read your Gmail (read-only; pal searches it only when you ask and never stores mail)" }[service],
+  })),
+  connections: [{
+    id: "demo-conn-drive", provider: "google", service: "drive", account: "you@example.com", scopes: [], enabled: true,
+    project_id: null, config: { folders: [{ id: "demo-folder", name: "Notes" }] }, last_sync_at: new Date().toISOString(),
+    last_ok_at: new Date().toISOString(), last_error: null, created_at: new Date().toISOString(), items: 12,
+  }],
+};
+
 const routes: [string, RegExp, Handler][] = [
   // Auth: the demo is always "the owner at the PC".
   ["GET", /^auth\/me$/, () => ({ authenticated: true, owner: true, device: null, password_login: true, remote_url: "https://demo-pc.example.ts.net" })],
@@ -270,6 +287,10 @@ const routes: [string, RegExp, Handler][] = [
   }],
 
   // Devices.
+  ["GET", /^connections$/, () => demoConnections],
+  ["POST", /^connections\//, () => { throw new DemoError(403, "Google isn't connected in the demo."); }],
+  ["PATCH", /^connections\//, () => { throw new DemoError(403, "Google isn't connected in the demo."); }],
+  ["DELETE", /^connections\//, () => { throw new DemoError(403, "Google isn't connected in the demo."); }],
   ["GET", /^devices$/, () => state.devices],
   ["POST", /^devices\/pairing$/, ({ body }) => ({
     code: "DEMO-7QX2", name: body.name, kind: body.kind, expires_at: new Date(Date.now() + 10 * MIN).toISOString(),
