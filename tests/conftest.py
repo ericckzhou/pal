@@ -100,6 +100,20 @@ def _private_data_dir(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(kept_uploads, "_key", lambda create=True: b"k" * 32)
 
 
+@pytest.fixture(autouse=True)
+def google_secrets(monkeypatch) -> dict:
+    """Google tokens and OAuth clients live in memory during tests, never in the owner's Credential Manager."""
+    from pal import secret_store
+
+    mem: dict[str, str] = {}
+    real_get, real_put, real_delete = secret_store.get, secret_store.put, secret_store.delete
+    mine = lambda account: account.startswith("google-")  # noqa: E731
+    monkeypatch.setattr(secret_store, "get", lambda a: mem.get(a) if mine(a) else real_get(a))
+    monkeypatch.setattr(secret_store, "put", lambda a, v: mem.__setitem__(a, v) if mine(a) else real_put(a, v))
+    monkeypatch.setattr(secret_store, "delete", lambda a: mem.pop(a, None) is not None if mine(a) else real_delete(a))
+    return mem
+
+
 @pytest.fixture(scope="session")
 def settings() -> Settings:
     return replace(

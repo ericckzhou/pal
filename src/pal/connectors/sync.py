@@ -16,8 +16,8 @@ from uuid import UUID
 import psycopg
 from psycopg_pool import ConnectionPool
 
-from .. import ingest
-from . import store
+from .. import egress, ingest
+from . import hosts, store
 
 log = logging.getLogger("pal.connectors")
 
@@ -125,6 +125,7 @@ def sync_one(conn: psycopg.Connection, connection_id: UUID, stop: threading.Even
 def sync_all(pool: ConnectionPool, stop: threading.Event | None = None) -> dict[str, dict]:
     """Sync every enabled connection, one after another. Keyed by "provider/service"."""
     with pool.connection() as conn:
+        egress.allow(hosts.enabled_hosts(conn))  # connected from the command line since pal started
         rows = [r for r in store.list_all(conn) if r["enabled"]]
         out = {}
         for r in rows:

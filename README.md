@@ -150,6 +150,27 @@ uv run pal claude-key --set
 
 Restart pal, and the Claude models show up in the model picker above the chat box. Chats that use a local model stay fully offline. To remove the key, run `uv run pal claude-key --clear`.
 
+### Connecting Google (optional, in progress)
+
+pal can read your Google Calendar and Drive, and search Gmail when you ask. All of it is read-only. Calendar and Drive are copied into pal's own database on this PC; Gmail is never copied, only searched. Nothing goes to any server run by pal; there isn't one. *Only the sign-in is built so far; syncing each service comes next.*
+
+You sign in with your own Google OAuth client, because a public repo can't ship one. It takes about 10 minutes, once:
+
+1. Go to [console.cloud.google.com](https://console.cloud.google.com), create a project (any name), and in **APIs & Services › Library** enable the **Google Calendar API**, **Google Drive API** and **Gmail API** (only the ones you'll use).
+2. In **APIs & Services › OAuth consent screen**: choose **External**, fill in an app name and your email, and add yourself under **Test users**.
+3. Still on the consent screen, click **Publish app** so it shows **In production**. In "Testing", Google ends the sign-in every 7 days. Publishing does *not* get the app verified: Google shows an "unverified app" warning when you sign in. That's expected for a personal app; click **Advanced › Go to (your app)**. Google allows unverified apps for personal use, including Gmail's restricted permission.
+4. In **APIs & Services › Credentials**: **Create credentials › OAuth client ID**, type **Desktop app**. Download the JSON.
+5. Store it and connect one service at a time:
+
+```sh
+uv run pal google-client --set path/to/client.json   # then delete the downloaded file
+uv run pal connect google calendar                   # or drive, or gmail
+uv run pal connections                               # what's connected and when it last synced
+uv run pal disconnect google calendar                # or "all"
+```
+
+pal asks Google only for the service you're connecting. Google's Drive permission covers your whole Drive, even though pal syncs only the folders you pick. If you untick the permission on Google's screen, nothing is connected. Disconnecting deletes everything pal synced from that service. When the last Google service is disconnected, pal also tells Google to end its access. Google can't take back a single permission on its own, so until then the grant stays listed at [myaccount.google.com/permissions](https://myaccount.google.com/permissions). Signing in on the Docker setup isn't supported yet.
+
 ### Running with Docker (Linux and Mac)
 
 You need Docker. Everything else (the database, Ollama and pal) runs in containers.
@@ -186,6 +207,10 @@ Run each one as `uv run pal <command>`.
 | `backup-key --show` | Show the backup key so you can store it safely. Use `--set` to restore it on a new install. |
 | `decrypt-backup <file> <out>` | Turn an encrypted backup back into a normal database dump |
 | `claude-key --set` / `--clear` | Save or remove your Anthropic API key |
+| `google-client --set <file>` | Save your Google OAuth client (see Connecting Google) |
+| `connect google <service>` | Sign in and connect `calendar`, `drive` or `gmail` |
+| `disconnect google <service>` | Remove a service and everything synced from it (`all` for every one) |
+| `connections` | List connected services and their last sync |
 | `migrate` | Update the database structure (`serve` already does this) |
 
 ## Settings

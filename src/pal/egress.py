@@ -83,6 +83,15 @@ def _check_lookup(host: object) -> None:
         raise EgressBlocked(f"DNS lookup of {host} blocked by pal egress guard")
 
 
+def allow(hosts: tuple[str, ...]) -> None:
+    """Let more named hosts through while pal runs (a service connected from the command line since start-up).
+
+    Callers pass only hosts from connectors.hosts.HOSTS, a fixed list in code, so the database can't widen this to
+    an arbitrary host. Hosts stay allowed until pal restarts.
+    """
+    _allowed_hosts.update(h.lower() for h in hosts)
+
+
 def install(extra_hosts: tuple[str, ...] = (), local_services: tuple[str, ...] = ()) -> None:
     """Patch socket so non-loopback connects, sends and lookups raise. Idempotent."""
     global _installed

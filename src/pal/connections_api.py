@@ -2,11 +2,12 @@
 
 from uuid import UUID
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from .api import require_owner
-from .connectors import store, sync
+from .connectors import google, store, sync
 
 router = APIRouter(prefix="/api/connections", dependencies=[Depends(require_owner)])
 
@@ -49,4 +50,5 @@ def disconnect(connection_id: UUID, request: Request) -> dict:
     with request.app.state.pool.connection() as conn:
         if store.get(conn, connection_id) is None:
             raise HTTPException(status_code=404, detail="No such connection")
-        return {"documents_removed": store.remove(conn, connection_id)}
+        with httpx.Client() as http:
+            return google.disconnect(conn, connection_id, http)

@@ -1,4 +1,4 @@
-"""pal command line: serve, set-password, migrate, backup, backup-key, decrypt-backup, revoke-sessions, pair, devices, revoke-device, ingest, pdf-models."""
+"""pal command line: serve, set-password, migrate, backup, backup-key, decrypt-backup, revoke-sessions, pair, devices, revoke-device, ingest, pdf-models, google-client, connect, disconnect, connections."""
 
 import argparse
 import getpass
@@ -233,8 +233,13 @@ def main() -> None:
     ing = sub.add_parser("ingest", help="add a file or folder (PDF, Markdown, text); re-run to refresh changed files")
     ing.add_argument("path")
     sub.add_parser("pdf-models", help="download Docling's layout/table/OCR models (one-time; better PDF reading)")
+    from .connectors import google_cli
+
+    google_cli.add_parsers(sub)
     args = parser.parse_args()
     settings = Settings.from_env()
+    if google_cli.run(args, settings):
+        return
 
     if args.cmd == "serve":
         cmd_serve(settings)
