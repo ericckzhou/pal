@@ -36,6 +36,18 @@ def _local_services(settings: Settings) -> tuple[str, ...]:
     return tuple(h for h in hosts if h and h not in ("127.0.0.1", "localhost", "::1"))
 
 
+def _connector_hosts(settings: Settings) -> tuple[str, ...]:
+    """Outside hosts for connected services that are switched on now; none if the database can't say."""
+    from .connectors import hosts
+
+    try:
+        with psycopg.connect(dsn(settings)) as conn:
+            return hosts.enabled_hosts(conn)
+    except Exception:
+        logging.getLogger("pal").exception("could not read connected services; none are allowed out this run")
+        return ()
+
+
 def cmd_serve(settings: Settings) -> None:
     import uvicorn
 
@@ -57,7 +69,8 @@ def cmd_serve(settings: Settings) -> None:
         has_key = bool(claude.load_key())
     except Exception:
         has_key = False
-    egress.install(extra_hosts=(claude.API_HOST,) if has_key else (), local_services=_local_services(settings))
+    egress.install(extra_hosts=((claude.API_HOST,) if has_key else ()) + _connector_hosts(settings),
+                   local_services=_local_services(settings))
     uvicorn.run(create_app(settings), host=settings.host, port=settings.port, log_level="info", proxy_headers=False)
 
 

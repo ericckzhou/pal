@@ -123,7 +123,7 @@ def _database(settings: Settings) -> None:
 def db(settings: Settings, _database: None) -> Iterator[psycopg.Connection]:
     with psycopg.connect(dsn(settings), autocommit=True) as conn:
         conn.execute("TRUNCATE owner, sessions, devices, passkeys, pairing_codes, conversations, messages, memories, documents, chunks, projects, tasks, notes, "
-            "reminders, notifications, proposals, app_settings, digests CASCADE")
+            "reminders, notifications, proposals, app_settings, digests, connections, connector_items CASCADE")
         yield conn
 
 

@@ -226,6 +226,7 @@ export function seed(): DemoState {
     setting("backup_keep", "Backups to keep", "backup", "int", "Nightly backups older than this many are deleted.", 14, { minimum: 1, maximum: 365 }),
     setting("brief_hour", "Morning brief at (hour, 0 = off)", "automation", "int", "One notification each morning with what's due today.", 8, { minimum: 0, maximum: 23 }),
     setting("rescan_minutes", "Check added folders every (minutes, 0 = off)", "automation", "int", "New or changed files in your folders are read automatically.", 30, { minimum: 0, maximum: 1440 }),
+    setting("sync_minutes", "Sync connected services every (minutes, 0 = off)", "automation", "int", "Connected Google Calendar and Drive are brought up to date on their own. Gmail is only searched when you ask.", 15, { minimum: 0, maximum: 1440 }),
   ];
 
   return { projects, tasks, notes, reminders, memories, documents, conversations, proposals, devices, settings, defaultThinking: "low" };

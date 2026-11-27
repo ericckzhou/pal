@@ -56,6 +56,9 @@ FIELDS: tuple[Field, ...] = (
     Field("rescan_minutes", "Check added folders every (minutes, 0 = off)", "automation", "int",
           "New and changed files in folders you added on the Documents page are picked up on their own. "
           "Files deleted from disk stay in pal until you remove them.", 0, 1440),
+    Field("sync_minutes", "Sync connected services every (minutes, 0 = off)", "automation", "int",
+          "Connected Google Calendar and Drive are brought up to date on their own. Gmail is never copied into "
+          "pal; it is only searched when you ask.", 0, 1440),
 )
 BY_KEY = {f.key: f for f in FIELDS}
 

@@ -18,6 +18,7 @@ from . import (
     api,
     brief,
     claude,
+    connections_api,
     dashboard_api,
     devices,
     devices_api,
@@ -40,12 +41,14 @@ from . import (
 from .auth import LoginLimiter
 from .backup import start_nightly
 from .config import Settings, dsn
+from .connectors import sync as connector_sync
 from .llm import OllamaGateway
 
 log = logging.getLogger("pal.app")
 MEMORY_TICK_S = 60
 EMBED_TICK_S = 5
 REMINDER_TICK_S = 30
+SYNC_CHECK_S = 60  # how often the connector sync loop looks at its interval setting
 RESCAN_CHECK_S = 60  # how often the rescan loop looks at its interval setting
 SHUTDOWN_WAIT_S = 15  # how long shutdown waits for a background job to finish the file or batch it is on
 
@@ -155,6 +158,26 @@ async def _rescan_loop(app: FastAPI) -> None:
             log.exception("folder rescan failed")
 
 
+async def _sync_loop(app: FastAPI) -> None:
+    """Sync connected services (Google Calendar, Drive). The interval is read each time, like the rescan loop."""
+    last: float | None = None
+    while True:
+        await asyncio.sleep(SYNC_CHECK_S)
+        minutes = app.state.settings.sync_minutes
+        if minutes == 0 or (last is not None and time.monotonic() - last < minutes * 60):
+            continue
+        last = time.monotonic()
+        try:
+            results = await app.state.jobs.run(connector_sync.sync_all, app.state.pool, app.state.jobs.stop)
+            for name, r in results.items():
+                if r["status"] == "failed":
+                    log.warning("%s sync failed; see the Connections page", name)
+                elif r.get("added") or r.get("updated") or r.get("removed"):
+                    log.info("%s sync: %d added, %d updated, %d removed", name, r["added"], r["updated"], r["removed"])
+        except Exception:
+            log.exception("connector sync failed")
+
+
 def _rescan(pool, stop: threading.Event) -> dict:
     with pool.connection() as conn:
         return ingest.rescan_folders(conn, stop)
@@ -194,6 +217,7 @@ def create_app(settings: Settings | None = None, llm=None, start_background: boo
             tasks.append(asyncio.create_task(_embed_loop(app)))
             tasks.append(asyncio.create_task(_reminder_loop(app)))
             tasks.append(asyncio.create_task(_rescan_loop(app)))
+            tasks.append(asyncio.create_task(_sync_loop(app)))
         try:
             yield
         finally:
@@ -230,6 +254,7 @@ def create_app(settings: Settings | None = None, llm=None, start_background: boo
     app.include_router(review_api.router)
     app.include_router(dashboard_api.router)
     app.include_router(dashboard_api.owner)
+    app.include_router(connections_api.router)
 
     if (WEB_DIST / "assets").is_dir():
         app.mount("/assets", StaticFiles(directory=WEB_DIST / "assets"), name="assets")

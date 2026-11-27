@@ -47,6 +47,7 @@ class Settings:
     memory_idle_minutes: int = 15  # a conversation this quiet counts as ended; pal then proposes memories
     brief_hour: int = 8  # local hour the morning brief goes out; 0 = off
     rescan_minutes: int = 30  # how often added folders are checked for new or changed files; 0 = off
+    sync_minutes: int = 15  # how often connected services (Google Calendar, Drive) are synced; 0 = off
 
     @classmethod
     def from_env(cls) -> "Settings":
