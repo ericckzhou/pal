@@ -18,6 +18,10 @@ CITE_RULE = (
     "If the user asks about their own life and the context doesn't contain the answer, say you don't know. "
     "If two items disagree, the one with the later date is usually current: use it, and mention the older one."
 )
+CALENDAR_RULE = (
+    "\nCalendar items cover only the calendars the user connected to pal. If none match, say you don't see anything "
+    "on their connected calendars; never say they are free."
+)
 CONTEXT_BUDGET = 2500  # tokens
 _PER_MESSAGE_OVERHEAD = 4
 _TAG = re.compile(r"<\s*/?\s*context\s*>", re.I)
@@ -34,6 +38,10 @@ def _label(item: dict) -> str:
         return f"{label}, saved {at}" if at else label
     if item["kind"] == "project":
         return "project card"
+    if item["kind"] == "event":
+        return "calendar event, connected calendars only"
+    if item["kind"] == "calendar":
+        return "calendar, connected calendars only"
     if item["kind"] == "note":
         label = item["title"] or "note"
         return f"{label}, {at}" if at else label
@@ -72,7 +80,9 @@ def build_messages(
     The latest message is always included (truncated from the front if needed, which drops context first).
     """
     block, used = context_block(items or [])
-    system = SYSTEM_PROMPT + (CITE_RULE if used else "") + (f"\n{note}" if note else "")
+    calendar_used = any(u["kind"] in ("event", "calendar") for u in used)
+    system = SYSTEM_PROMPT + (CITE_RULE if used else "") + (CALENDAR_RULE if calendar_used else "") + \
+        (f"\n{note}" if note else "")
     history = list(history)
     if block and history:
         history[-1] = {"role": history[-1]["role"], "content": block + history[-1]["content"]}

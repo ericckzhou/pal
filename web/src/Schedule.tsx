@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, Reminder } from "./api";
+import { api, CalendarEvent, Reminder } from "./api";
 import { dateTime, relTime } from "./format";
 import { Icon } from "./Icon";
 import ScheduleAutomations from "./ScheduleAutomations";
@@ -20,10 +20,18 @@ export default function Schedule({ version, owner, onAuthError }: Props) {
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [tick, setTick] = useState(0);
+  const [events, setEvents] = useState<CalendarEvent[] | null>(null); // null: no calendar connected
 
   useEffect(() => {
     api.allReminders().then(setItems).catch(onAuthError);
   }, [version, tick, onAuthError]);
+
+  useEffect(() => {
+    api
+      .calendarEvents()
+      .then((r) => setEvents(r.connected ? r.events : null))
+      .catch(() => setEvents(null)); // the calendar band is extra; reminders still show without it
+  }, [version]);
 
   const act = async (fn: () => Promise<unknown>, done: string) => {
     setError("");
@@ -58,6 +66,26 @@ export default function Schedule({ version, owner, onAuthError }: Props) {
       {error && <p className="error">{error}</p>}
       {notice && <p className="notice small">{notice}</p>}
       {owner && <ScheduleAutomations onAuthError={onAuthError} />}
+
+      {events && (
+        <section className="calendar-band" aria-labelledby="calendar-heading">
+          <h3 id="calendar-heading">Calendar</h3>
+          <p className="muted small">The next two weeks from your connected Google Calendar. Read-only; change events in Google.</p>
+          {events.length === 0 ? (
+            <p className="muted">Nothing on your connected calendars in the next two weeks.</p>
+          ) : (
+            <ul className="calendar-list">
+              {events.map((e) => (
+                <li key={e.id} className={e.status === "tentative" ? "tentative" : undefined}>
+                  <span className="calendar-when">{e.when}</span>
+                  <span className="calendar-title">{e.title}</span>
+                  {e.location && <span className="muted small">{e.location}</span>}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
 
       <h3>Reminders</h3>
       {shown.length === 0 ? (

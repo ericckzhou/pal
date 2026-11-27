@@ -1,15 +1,19 @@
-"""Connected services (PC only): list them, sync now, pause or resume, disconnect."""
+"""Connected services (PC only): list them, sync now, pause or resume, disconnect. Plus calendar events to read."""
 
+from datetime import timedelta
 from uuid import UUID
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from .api import require_owner
+from . import calendar, reminders
+from .api import require_owner, require_session
 from .connectors import google, store, sync
 
 router = APIRouter(prefix="/api/connections", dependencies=[Depends(require_owner)])
+events = APIRouter(prefix="/api/calendar", dependencies=[Depends(require_session)])
+EVENT_DAYS_MAX = 60
 
 
 class Patch(BaseModel):
@@ -52,3 +56,13 @@ def disconnect(connection_id: UUID, request: Request) -> dict:
             raise HTTPException(status_code=404, detail="No such connection")
         with httpx.Client() as http:
             return google.disconnect(conn, connection_id, http)
+
+
+@events.get("/events")
+def upcoming_events(request: Request, days: int = 14) -> dict:
+    """Events on connected calendars from today, for the Schedule page (any signed-in device may read them)."""
+    days = max(1, min(days, EVENT_DAYS_MAX))
+    today = reminders.local_now().date()
+    with request.app.state.pool.connection() as conn:
+        return {"connected": calendar.connected(conn),
+                "events": [calendar.public(e) for e in calendar.between(conn, today, today + timedelta(days=days))]}

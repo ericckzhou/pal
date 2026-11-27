@@ -132,6 +132,17 @@ export type Task = {
 };
 export type TaskStage = "todo" | "doing";
 export type Note = { id: string; project_id: string | null; project: string | null; kind: "note" | "decision"; text: string; created_at: string };
+export type CalendarEvent = {
+  id: string;
+  title: string;
+  when: string;
+  all_day: boolean;
+  day: string;
+  location: string | null;
+  status: string;
+  start: string | null;
+};
+
 export type Reminder = {
   id: string;
   title: string;
@@ -466,6 +477,7 @@ export const api = {
     call<SettingsReport>("/api/settings", { method: "PUT", body: JSON.stringify(changes) }),
   resetSetting: (key: string) => call<SettingsReport>(`/api/settings/${key}`, { method: "DELETE" }),
   allReminders: () => call<Reminder[]>("/api/reminders?include_done=true"),
+  calendarEvents: (days = 14) => call<{ connected: boolean; events: CalendarEvent[] }>(`/api/calendar/events?days=${days}`),
   pauseReminder: (id: string) => call<Reminder>(`/api/reminders/${id}/pause`, { method: "POST" }),
   resumeReminder: (id: string) => call<Reminder>(`/api/reminders/${id}/resume`, { method: "POST" }),
   triggerReminder: (id: string) => call<Notification>(`/api/reminders/${id}/trigger`, { method: "POST" }),

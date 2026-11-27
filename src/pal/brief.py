@@ -1,4 +1,5 @@
-"""The morning brief: one notification a day with what's overdue, due, scheduled and in progress today.
+"""The morning brief: one notification a day with what's overdue, due, scheduled and in progress today, plus
+events on connected calendars.
 
 Plain queries, no model, like the weekly digest. It goes out once per local day, the first time pal is running
 at or after the chosen hour (so a PC switched on at 10:00 still gets it). A day with nothing to say sends nothing.
@@ -9,7 +10,7 @@ from datetime import date, datetime, time, timedelta
 import psycopg
 from psycopg.types.json import Jsonb
 
-from . import db
+from . import calendar, db
 from .reminders import aware, local_now
 
 SENT_KEY = "brief_last_sent"  # app_settings; the local date of the last brief (not an editable setting)
@@ -30,7 +31,9 @@ def build(conn: psycopg.Connection, today: date) -> dict:
              (SELECT title FROM open WHERE due_date <= %(today)s ORDER BY due_date, created_at LIMIT 1)""",
         {"today": today, "start": start, "end": start + timedelta(days=1)},
     )
-    return dict(zip(("overdue", "due_today", "reminders_today", "in_progress", "first"), row, strict=True))
+    events, first_event = calendar.today_summary(conn, today)
+    return {**dict(zip(("overdue", "due_today", "reminders_today", "in_progress", "first"), row, strict=True)),
+            "events_today": events, "first_event": first_event}
 
 
 def _part(n: int, one: str, many: str | None = None) -> str | None:
@@ -44,10 +47,13 @@ def text(b: dict) -> str | None:
         _part(b["due_today"], "due today"),
         _part(b["reminders_today"], "reminder today", "reminders today"),
         _part(b["in_progress"], "in progress"),
+        _part(b.get("events_today", 0), "event today", "events today"),
     ) if p]
     if not parts:
         return None
     line = "Morning brief: " + " · ".join(parts) + "."
+    if b.get("first_event"):
+        line += f" First up: {b['first_event']}."
     return f"{line} Start with: {b['first']}" if b["first"] else line
 
 

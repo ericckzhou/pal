@@ -44,7 +44,8 @@ def list_all(conn: psycopg.Connection) -> list[dict]:
     with conn.cursor(row_factory=dict_row) as cur:
         return cur.execute(
             f"SELECT {', '.join('c.' + c.strip() for c in COLUMNS.split(','))}, "
-            "(SELECT count(*) FROM connector_items i WHERE i.connection_id = c.id) AS items "
+            "(SELECT count(*) FROM connector_items i WHERE i.connection_id = c.id) "
+            "+ (SELECT count(*) FROM calendar_events e WHERE e.connection_id = c.id) AS items "
             "FROM connections c ORDER BY c.provider, c.service"
         ).fetchall()
 

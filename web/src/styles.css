@@ -569,3 +569,13 @@ button.board-card-title { display: block; width: 100%; text-align: left; border:
 .reasoning { margin: 0.25rem 0 0.5rem; border-left: 2px solid var(--line); padding-left: 0.6rem; }
 .reasoning summary { cursor: pointer; color: var(--muted); font-style: italic; }
 .reasoning-text { white-space: pre-wrap; color: var(--muted); max-height: 18rem; overflow-y: auto; margin-top: 0.3rem; }
+
+.calendar-band { margin-block: 1rem 1.5rem; }
+.calendar-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.25rem; }
+.calendar-list li {
+  display: flex; flex-wrap: wrap; gap: 0.25rem 0.75rem; align-items: baseline;
+  padding: 0.5rem 0.75rem; border: 1px solid var(--line); border-radius: 8px; background: var(--panel);
+}
+.calendar-list li.tentative { border-style: dashed; }
+.calendar-when { font-variant-numeric: tabular-nums; min-width: 11rem; color: var(--muted); }
+.calendar-title { font-weight: 500; }

@@ -10,7 +10,20 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 
-from . import actions, auth, claude, conversations, devices, memory, model_cmd, reminders, retrieval, thinking, work
+from . import (
+    actions,
+    auth,
+    calendar,
+    claude,
+    conversations,
+    devices,
+    memory,
+    model_cmd,
+    reminders,
+    retrieval,
+    thinking,
+    work,
+)
 from .context import build_messages
 from .llm import LLMError
 
@@ -302,7 +315,7 @@ def post_message(conv_id: UUID, body: MessageBody, request: Request) -> Streamin
             focus = _project_item(conn, conv_id)
             focus_id = UUID(focus[0]["id"]) if focus else None
             trace = {}
-            items = focus + retrieval.retrieve(
+            items = focus + calendar.context_items(conn, body.content, reminders.local_now()) + retrieval.retrieve(
                 conn, state.llm, _retrieval_query(past), conv_id, focus_id, use_rerank=state.settings.rerank == "on",
                 trace=trace,
             )
