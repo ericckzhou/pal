@@ -566,8 +566,23 @@ button.board-card-title { display: block; width: 100%; text-align: left; border:
 .chat-controls .picker { display: inline-flex; align-items: center; gap: 0.35rem; white-space: nowrap; }
 .chat-controls select { max-width: 14rem; }
 .chat-controls .model-pick { margin-left: auto; }
-.chat-controls .starcall-toggle { margin-left: auto; } /* sits just left of the model picker */
-.chat-controls .starcall-toggle + .model-pick { margin-left: 0; }
+.chat-controls .mcp-wrap { margin-left: auto; } /* sits just left of the model picker */
+.chat-controls .mcp-wrap + .model-pick { margin-left: 0; }
+.menu.up { top: auto; bottom: calc(100% + 4px); }
+.mcp-button { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.15rem 0.6rem; }
+.mcp-button.on { border-color: var(--accent); color: var(--accent); }
+.mcp-count { min-width: 1.1rem; padding: 0 0.3rem; border-radius: 999px; background: var(--accent); color: var(--accent-text); font-size: 0.7rem; line-height: 1.1rem; text-align: center; }
+.mcp-menu { min-width: 17rem; max-width: min(22rem, 90vw); color: var(--text); }
+.mcp-menu .mcp-head { margin: 0.15rem 0.6rem 0.3rem; }
+.mcp-menu .mcp-foot { margin: 0.3rem 0.6rem 0.15rem; border-top: 1px solid var(--line); padding-top: 0.35rem; }
+.mcp-menu button { align-items: flex-start; }
+.mcp-text { display: grid; gap: 0.1rem; min-width: 0; }
+.mcp-warn { color: var(--warn); }
+.mcp-switch { flex: none; position: relative; width: 1.9rem; height: 1.05rem; margin-top: 0.1rem; border-radius: 999px; background: var(--line); transition: background 0.15s; }
+.mcp-switch::after { content: ""; position: absolute; top: 0.15rem; left: 0.15rem; width: 0.75rem; height: 0.75rem; border-radius: 50%; background: var(--panel); transition: transform 0.15s; }
+.mcp-switch.on { background: var(--accent); }
+.mcp-switch.on::after { transform: translateX(0.85rem); }
+@media (prefers-reduced-motion: reduce) { .mcp-switch, .mcp-switch::after { transition: none; } }
 .chat-controls .cloud-confirm { flex-basis: 100%; margin-top: 0; }
 .reasoning { margin: 0.25rem 0 0.5rem; border-left: 2px solid var(--line); padding-left: 0.6rem; }
 .reasoning summary { cursor: pointer; color: var(--muted); font-style: italic; }

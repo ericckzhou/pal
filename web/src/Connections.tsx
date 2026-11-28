@@ -351,7 +351,7 @@ function runtimeLine(r: StarcallRuntime | null): string | null {
 }
 
 function testMessage(r: { ok: boolean; status: StarcallRuntime }): string {
-  if (r.ok) return "StarcallOS answered. Chats with Search StarcallOS on can use it now.";
+  if (r.ok) return "StarcallOS answered. Switch it on in a chat under MCP, beside the model picker.";
   throw new Error(r.status.error?.message ?? "StarcallOS didn't start. See the card for details.");
 }
 
@@ -399,7 +399,7 @@ function Starcall({ card, busy, run }: { card: StarcallCard; busy: boolean; run:
         <strong>StarcallOS</strong> <span className={`badge conn-state conn-${state}`}>{label}</span>
       </p>
       <p className="small muted">
-        Your StarcallOS library, searched live when a chat has <em>Search StarcallOS</em> on (off by default). pal starts
+        Your StarcallOS library, searched live when a chat switches it on under <em>MCP</em> (off by default). pal starts
         StarcallOS's read-only server on this PC, uses at most 2 of its items per reply, and keeps none of their text.
       </p>
       {!card.native ? (

@@ -563,6 +563,7 @@ export const api = {
   testStarcall: () =>
     call<{ ok: boolean; status: StarcallRuntime; card: StarcallCard }>("/api/connections/starcall/test", { method: "POST" }),
   removeStarcall: () => call<StarcallCard>("/api/connections/starcall", { method: "DELETE" }),
+  starcallAvailable: () => call<{ available: boolean }>("/api/starcall/available"),
   calendarFree: (day: string, start: string, end: string) =>
     call<FreeBusy>(`/api/calendar/free?${new URLSearchParams({ day, start, end })}`),
   calendarEvents: (days = 14) => call<{ connected: boolean; events: CalendarEvent[] }>(`/api/calendar/events?days=${days}`),
