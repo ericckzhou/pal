@@ -30,7 +30,7 @@ from .embed import QUERY_PREFIX, vector_literal
 log = logging.getLogger("pal.retrieval")
 
 VEC_MIN = 0.60  # cosine similarity; related text scored 0.61-0.81, unrelated 0.33-0.59 (nomic-embed-text)
-_HANDLE = re.compile(r"\s?\[[mdcnps]\d+\]")  # citation handles inside old replies mean nothing out of their turn
+_HANDLE = re.compile(r"\s?\[[mdcnpegs]\d+\]")  # citation handles inside old replies mean nothing out of their turn
 FTS_VEC_MIN = 0.55  # a keyword match also needs this much similarity; 0.45 -> 0.55 cut no-answer noise (eval/RETRIEVAL.md)
 PER_LIST = 8
 MAX_ITEMS = 6

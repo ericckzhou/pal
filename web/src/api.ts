@@ -16,13 +16,15 @@ export const THINKING_LEVELS = ["off", "low", "medium", "high"] as const;
 export type ThinkingLevel = (typeof THINKING_LEVELS)[number];
 export type Source = {
   handle: string;
-  kind: "memory" | "document" | "conversation" | "note" | "project" | "starcall";
+  // event/calendar: connected calendars ([eN]); email/mail: a live Gmail search ([gN]), kept without its text
+  kind: "memory" | "document" | "conversation" | "note" | "project" | "starcall" | "event" | "calendar" | "email" | "mail";
   id: string;
   title: string | null;
   snippet: string; // a StarcallOS item's text is shown during the reply only; once stored it's ""
   page: number | null;
   page_end?: number | null;
   starcall_kind?: "passage" | "concept";
+  link?: string | null; // an email's Gmail link
   conversation_id: string | null;
   document_id: string | null;
   at: string | null;
@@ -30,7 +32,7 @@ export type Source = {
 };
 export type TraceDecision = "used" | "trimmed" | "reranker_dropped" | "ranked_lower";
 export type TraceCandidate = {
-  kind: Source["kind"];
+  kind: "memory" | "document" | "conversation" | "note" | "project" | "starcall"; // only what retrieval ranks
   id: string;
   label: string | null; // null once the item has been deleted
   decision: TraceDecision;

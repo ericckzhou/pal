@@ -322,3 +322,9 @@ def test_old_reply_citations_are_stripped_from_context(authed, db, llm):
 ])
 def test_pdf_metadata_titles_that_look_like_files_are_ignored(meta, useful):
     assert ingest._useful_pdf_title(meta) is useful
+
+
+def test_old_replies_lose_every_kind_of_citation_handle():
+    """A past chat used as context drops its handles, including Gmail [gN] and calendar [eN] ones."""
+    old = "Lunch is at noon [e1], Priya confirmed [g2]; see [s1] and [m3]. A link [x](y) stays."
+    assert retrieval._HANDLE.sub("", old) == "Lunch is at noon, Priya confirmed; see and. A link [x](y) stays."

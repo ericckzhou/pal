@@ -228,6 +228,7 @@ a.cite { display: inline-block; font-size: 0.75rem; line-height: 1.2; padding: 0
 .source-head .cite { background: var(--user); color: var(--accent); border-radius: 6px; padding: 0 0.35rem; }
 .source-body { padding: 0.2rem 0 0.4rem 1.4rem; color: var(--muted); }
 .source-body p { margin: 0 0 0.3rem; overflow-wrap: anywhere; }
+.source-body a { color: var(--accent); }
 .source:target .source-head { color: var(--accent); }
 .sources > button.link { justify-self: start; padding-left: 0; }
 .trace { margin-top: 0.35rem; color: var(--muted); }

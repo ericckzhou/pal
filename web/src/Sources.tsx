@@ -6,7 +6,18 @@ export type SourceActions = {
   onOpenMemory: () => void;
 };
 
-const KIND_LABEL = { memory: "Memory", document: "Document", conversation: "Past chat", note: "Note", project: "Project", starcall: "Passage" } as const;
+const KIND_LABEL = {
+  memory: "Memory",
+  document: "Document",
+  conversation: "Past chat",
+  note: "Note",
+  project: "Project",
+  starcall: "Passage",
+  event: "Calendar event",
+  calendar: "Calendar",
+  email: "Gmail message",
+  mail: "Gmail",
+} as const;
 const kindLabel = (s: Source) => {
   if (s.kind === "memory" && s.pinned) return "Pinned memory";
   if (s.kind === "starcall" && s.starcall_kind === "concept") return "Concept";
@@ -17,7 +28,7 @@ export const pageLabel = (start: number | null, end?: number | null) =>
   start == null ? "" : end == null || end === start ? `p.${start}` : `pp.${start}–${end}`;
 
 export function citedHandles(text: string): Set<string> {
-  return new Set(Array.from(text.matchAll(/\[([mdcnps]\d+)\]/g), (m) => m[1]));
+  return new Set(Array.from(text.matchAll(/\[([mdcnpegs]\d+)\]/g), (m) => m[1])); // same letters as api.py's _CITE
 }
 
 function label(s: Source): string {
@@ -25,6 +36,9 @@ function label(s: Source): string {
   if (s.kind === "note") return `${s.title ?? "note"}: ${s.snippet.length > 80 ? `${s.snippet.slice(0, 80)}…` : s.snippet}`;
   if (s.kind === "project") return s.title ?? "Project";
   if (s.kind === "document") return `${s.title ?? "Document"}${s.page ? `, p.${s.page}` : ""}`;
+  if (s.kind === "email") return s.snippet ? (s.title ?? "") : ""; // a saved email keeps no subject
+  if (s.kind === "event") return s.title ?? KIND_LABEL[s.kind];
+  if (s.kind === "calendar" || s.kind === "mail") return s.snippet || KIND_LABEL[s.kind];
   if (s.kind === "starcall") {
     const pages = pageLabel(s.page, s.page_end);
     return `${s.title ?? "StarcallOS"}${pages ? `, ${pages}` : ""}`;
@@ -66,7 +80,8 @@ function SourceRow({ s, actions, anchor }: { s: Source; actions: SourceActions; 
             <span className="src-tag" title="From your StarcallOS library">StarcallOS</span>{" "}
           </>
         )}
-        {kindLabel(s)}: {label(s)}
+        {kindLabel(s)}
+        {label(s) && `: ${label(s)}`}
       </button>
       {open && (
         <div className="source-body">
@@ -74,8 +89,15 @@ function SourceRow({ s, actions, anchor }: { s: Source; actions: SourceActions; 
             <p>{s.snippet}</p>
           ) : s.kind === "starcall" ? (
             <p className="muted">pal doesn't keep StarcallOS text. Open this page in StarcallOS to read it again.</p>
+          ) : s.kind === "email" ? (
+            <p className="muted">pal doesn't keep email text.</p>
           ) : (
             <p>{s.snippet}</p>
+          )}
+          {s.kind === "email" && s.link && (
+            <a className="small" href={s.link} target="_blank" rel="noreferrer noopener">
+              Open in Gmail
+            </a>
           )}
           {s.kind === "conversation" && s.conversation_id && (
             <button className="small" onClick={() => actions.onOpenConversation(s.conversation_id!)}>
