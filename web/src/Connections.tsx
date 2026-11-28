@@ -14,7 +14,9 @@ import {
 import ProjectSelect, { useProjects } from "./ProjectSelect";
 
 type Props = { onAuthError: (err: unknown) => void };
-type Run = (fn: () => Promise<string>) => Promise<void>;
+// `here` shows the outcome inside the card that asked, instead of at the top of the page.
+type Here = { notice: (m: string) => void; error: (m: string) => void };
+type Run = (fn: () => Promise<string>, here?: Here) => Promise<void>;
 
 const NAMES: Record<GoogleService, string> = { calendar: "Google Calendar", drive: "Google Drive", gmail: "Gmail" };
 const WHAT: Record<GoogleService, string> = {
@@ -95,15 +97,17 @@ export default function Connections({ onAuthError }: Props) {
     return () => clearInterval(t);
   }, [load]);
 
-  const run: Run = async (fn) => {
+  const run: Run = async (fn, here) => {
     setBusy(true);
     setError("");
     setNotice("");
+    here?.notice("");
+    here?.error("");
     try {
-      setNotice(await fn());
+      (here?.notice ?? setNotice)(await fn());
     } catch (err) {
       onAuthError(err);
-      setError(err instanceof Error ? err.message : "Something went wrong.");
+      (here?.error ?? setError)(err instanceof Error ? err.message : "Something went wrong.");
     } finally {
       setBusy(false);
       load();
@@ -360,6 +364,10 @@ function Starcall({ card, busy, run }: { card: StarcallCard; busy: boolean; run:
   const [scopes, setScopes] = useState<StarcallScope[]>(savedScopes.split(",") as StarcallScope[]);
   const [testing, setTesting] = useState(false);
   const [confirm, setConfirm] = useState(false);
+  const [notice, setNotice] = useState("");
+  const [error, setError] = useState("");
+  const here: Here = { notice: setNotice, error: setError };
+  const act = (fn: () => Promise<string>) => run(fn, here);
   useEffect(() => {
     setPath(savedPath);
     setScopes(savedScopes.split(",") as StarcallScope[]);
@@ -372,14 +380,16 @@ function Starcall({ card, busy, run }: { card: StarcallCard; busy: boolean; run:
     setScopes((cur) => card.scopes.map((s) => s.name).filter((n) => n === "passages" || (n === name ? on : cur.includes(n))));
   const save = (e: FormEvent) => {
     e.preventDefault();
-    run(async () => {
-      await api.saveStarcall(path, scopes);
-      return c ? "Saved. Press Test to check it." : "Saved. Press Test to check that pal can start it.";
+    act(async () => {
+      const card = await api.saveStarcall(path, scopes);
+      const saved = card.connection?.server_path ?? path;
+      const filled = saved !== path.trim().replace(/^"|"$/g, "") ? ` (completed to ${saved})` : "";
+      return `Saved${filled}. Press Test to check that pal can start it.`;
     });
   };
   const test = () => {
     setTesting(true);
-    run(async () => testMessage(await api.testStarcall())).finally(() => setTesting(false));
+    act(async () => testMessage(await api.testStarcall())).finally(() => setTesting(false));
   };
   const extra = runtimeLine(card.runtime);
 
@@ -403,6 +413,7 @@ function Starcall({ card, busy, run }: { card: StarcallCard; busy: boolean; run:
                 value={path}
                 onChange={(e) => setPath(e.target.value)}
                 placeholder={PATH_HINT}
+                title="Your StarcallOS folder, or packages\mcp-server\dist\index.js inside it"
                 aria-label="StarcallOS server path"
                 spellCheck={false}
                 disabled={busy}
@@ -433,6 +444,8 @@ function Starcall({ card, busy, run }: { card: StarcallCard; busy: boolean; run:
               )}
             </div>
           </form>
+          {notice && <p className="notice small" role="status">{notice}</p>}
+          {error && <p className="error small pre" role="alert">{error}</p>}
           {c && (
             <>
               <div className="memory-meta small muted">
@@ -451,7 +464,7 @@ function Starcall({ card, busy, run }: { card: StarcallCard; busy: boolean; run:
                   className="small"
                   disabled={busy}
                   title={c.enabled ? "Chats stop searching StarcallOS and its server stops; nothing is removed" : undefined}
-                  onClick={() => run(async () => (await api.pauseStarcall(!c.enabled), c.enabled ? "Paused." : "Resumed."))}
+                  onClick={() => act(async () => (await api.pauseStarcall(!c.enabled), c.enabled ? "Paused." : "Resumed."))}
                 >
                   {c.enabled ? "Pause" : "Resume"}
                 </button>
@@ -460,7 +473,7 @@ function Starcall({ card, busy, run }: { card: StarcallCard; busy: boolean; run:
                     <button
                       className="danger small"
                       disabled={busy}
-                      onClick={() => run(async () => (await api.removeStarcall(), setConfirm(false), "Removed StarcallOS. Nothing in StarcallOS changed."))}
+                      onClick={() => act(async () => (await api.removeStarcall(), setConfirm(false), "Removed StarcallOS. Nothing in StarcallOS changed."))}
                     >
                       Remove
                     </button>

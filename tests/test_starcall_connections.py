@@ -168,3 +168,14 @@ def test_google_routes_leave_the_starcall_row_alone(authed, db):
     assert authed.patch(f"/api/connections/{row_id}", json={"enabled": False}).status_code == 404
     assert authed.post(f"/api/connections/{row_id}/sync").status_code == 404
     assert _row(db)[0] is True
+
+
+@pytest.mark.parametrize("typed", [r"C:\sc", r"C:\sc" + "\\", r'"C:\sc"', r"C:\sc\packages", r"C:\sc\packages\mcp-server",
+                                   r"C:\sc\packages\mcp-server\dist", PATH])
+def test_save_completes_a_folder_on_the_way_to_the_server(authed, db, typed):
+    card = authed.put(URL, json={"server_path": typed}).json()
+    assert card["connection"]["server_path"] == PATH and _row(db)[1]["server_path"] == PATH
+
+
+def test_a_forward_slash_folder_keeps_its_slashes():
+    assert starcall.clean_path("C:/sc/packages/mcp-server") == "C:/sc/packages/mcp-server/dist/index.js"
