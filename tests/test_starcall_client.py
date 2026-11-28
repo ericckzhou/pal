@@ -434,8 +434,10 @@ def test_the_child_gets_none_of_pals_secrets(make, monkeypatch):
     c = make()
     keys = set(c._call("debug_env", {}, _Env).keys)
     assert not keys & {"PAL_DB_PASSWORD", "PGPASSWORD", "ANTHROPIC_API_KEY"}
-    # Windows itself may add a handful of variables to every new process; none carry pal's settings.
-    allowed = set(ENV_ALLOWLIST) | set(DEFAULT_INHERITED_ENV_VARS) | {"COMSPEC", "PROMPT"}
+    # Windows itself may add a handful of variables to every new process; none carry pal's settings. On Linux the
+    # fake server (a Python child started with no locale) sets LC_CTYPE in its own environment (PEP 538 locale
+    # coercion); pal doesn't pass it.
+    allowed = set(ENV_ALLOWLIST) | set(DEFAULT_INHERITED_ENV_VARS) | {"COMSPEC", "PROMPT", "LC_CTYPE"}
     assert not {k for k in keys if k.upper().startswith("PAL_")}
     assert {k.upper() for k in keys} <= {a.upper() for a in allowed}, keys - allowed
 
