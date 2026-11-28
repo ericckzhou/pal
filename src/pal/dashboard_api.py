@@ -208,7 +208,7 @@ def status(request: Request, session: auth.Session = Depends(require_session)) -
         counts["reread"] = reread.snapshot()
         acked = conn.execute("SELECT 1 FROM app_settings WHERE key = %s", (encryption.ACK_KEY,)).fetchone() is not None
         syncs, sync_warnings = sync_health(_rows(conn, "SELECT service, enabled, last_ok_at, last_error, created_at "
-                                                       "FROM connections ORDER BY service"), datetime.now(UTC))
+                                                       "FROM connections WHERE provider = 'google' ORDER BY service"), datetime.now(UTC))
     enc = encryption.current()
     backups = _backups(settings)
     disk = _disk_free(settings.backup_dir)
@@ -260,6 +260,7 @@ class ConversationPatch(BaseModel):
     thinking: Literal["off", "low", "medium", "high"] | None = None
     claude_context: bool | None = None  # a Claude chat also sends matching memories, documents and notes
     gmail: bool | None = None  # pal may search Gmail in this chat (local models only)
+    starcall: bool | None = None  # pal may search the StarcallOS library in this chat (Claude chats: also claude_context)
 
     @field_validator("title")
     @classmethod
@@ -303,7 +304,9 @@ def patch_conversation(conv_id: UUID, body: ConversationPatch, request: Request)
             conn.execute("UPDATE conversations SET claude_context = %s WHERE id = %s", (body.claude_context, conv_id))
         if "gmail" in fields and body.gmail is not None:
             conn.execute("UPDATE conversations SET gmail = %s WHERE id = %s", (body.gmail, conv_id))
-        return _rows(conn, "SELECT id, title, updated_at, project_id, model, thinking, claude_context, gmail "
+        if "starcall" in fields and body.starcall is not None:
+            conn.execute("UPDATE conversations SET starcall = %s WHERE id = %s", (body.starcall, conv_id))
+        return _rows(conn, "SELECT id, title, updated_at, project_id, model, thinking, claude_context, gmail, starcall "
                            "FROM conversations WHERE id = %s",
                      (conv_id,))[0]
 
