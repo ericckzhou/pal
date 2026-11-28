@@ -566,6 +566,8 @@ button.board-card-title { display: block; width: 100%; text-align: left; border:
 .chat-controls .picker { display: inline-flex; align-items: center; gap: 0.35rem; white-space: nowrap; }
 .chat-controls select { max-width: 14rem; }
 .chat-controls .model-pick { margin-left: auto; }
+.chat-controls .starcall-toggle { margin-left: auto; } /* sits just left of the model picker */
+.chat-controls .starcall-toggle + .model-pick { margin-left: 0; }
 .chat-controls .cloud-confirm { flex-basis: 100%; margin-top: 0; }
 .reasoning { margin: 0.25rem 0 0.5rem; border-left: 2px solid var(--line); padding-left: 0.6rem; }
 .reasoning summary { cursor: pointer; color: var(--muted); font-style: italic; }

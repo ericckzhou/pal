@@ -325,22 +325,6 @@ export default function Chat({
             Search Gmail
           </label>
         )}
-        {convId && starcallAvailable && (
-          <label
-            className={`chat-toggle${starcall && isClaude(model) && !claudeContext ? " needs" : ""}`}
-            title={
-              !isClaude(model)
-                ? "When on, pal searches your StarcallOS library on this PC and uses at most 2 of its items per reply. None of their text is stored."
-                : claudeContext
-                  ? "When on, matching StarcallOS passages are sent to Anthropic with your message (at most 2 per reply). None of their text is stored."
-                  : "A Claude chat also needs \"Share matching memories and documents with Claude\" on before StarcallOS is searched."
-            }
-          >
-            <input type="checkbox" checked={starcall} onChange={(e) => changeStarcall(e.target.checked)} />
-            Search StarcallOS
-            {starcall && isClaude(model) && !claudeContext && <span className="muted"> (needs sharing)</span>}
-          </label>
-        )}
       </div>
       {isClaude(model) && (
         <p className="cloud-banner small" role="status">
@@ -431,6 +415,22 @@ export default function Chat({
             ))}
           </select>
         </label>
+        {convId && starcallAvailable && (
+          <label
+            className={`chat-toggle starcall-toggle${starcall && isClaude(model) && !claudeContext ? " needs" : ""}`}
+            title={
+              !isClaude(model)
+                ? "When on, pal searches your StarcallOS library on this PC and uses at most 2 of its items per reply. None of their text is stored."
+                : claudeContext
+                  ? "When on, matching StarcallOS passages are sent to Anthropic with your message (at most 2 per reply). None of their text is stored."
+                  : "A Claude chat also needs \"Share matching memories and documents with Claude\" on before StarcallOS is searched."
+            }
+          >
+            <input type="checkbox" checked={starcall} onChange={(e) => changeStarcall(e.target.checked)} />
+            Search StarcallOS
+            {starcall && isClaude(model) && !claudeContext && <span className="muted"> (needs sharing)</span>}
+          </label>
+        )}
         <ModelPicker value={model} onPick={pickModel} onAuthError={onAuthError} />
       </div>
       <div className="composer">
