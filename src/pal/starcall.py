@@ -287,18 +287,30 @@ class SetupError(ValueError):
     pass
 
 
+_SERVER_TAIL = ("packages", "mcp-server", "dist", "index.js")
+
+
 def clean_path(raw: str) -> str:
-    """The server path as saved. Takes Explorer's "Copy as path" quotes; the file itself is checked by Test."""
-    path = raw.strip().strip('"').strip()
+    """The server path as saved. Takes Explorer's "Copy as path" quotes, and a folder on the way to the server (the
+    StarcallOS checkout, packages\\mcp-server or dist), which it completes to dist\\index.js. Test checks the file."""
+    path = raw.strip().strip('"').strip().rstrip("\\/")
     if not path:
         raise SetupError("Enter the path to the StarcallOS MCP server.")
     if len(path) > SERVER_PATH_MAX:
         raise SetupError("That path is too long.")
     if not (re.match(r"^[A-Za-z]:[\\/]", path) or path.startswith(("\\\\", "/"))):
         raise SetupError(r"Use the full path, starting with the drive (C:\...).")
+    sep = "/" if "/" in path and "\\" not in path else "\\"
+    last = re.split(r"[\\/]+", path)[-1].lower()
+    if last in ("dist", "mcp-server", "packages"):
+        path = sep.join([path, *_SERVER_TAIL[_SERVER_TAIL.index(last) + 1 :]])
+    elif "." not in last:  # a folder: take it as the StarcallOS checkout
+        path = sep.join([path, *_SERVER_TAIL])
     parts = re.split(r"[\\/]+", path)
-    if len(parts) < 2 or parts[-1].lower() != "index.js" or parts[-2].lower() != "dist":
-        raise SetupError(r"Point it at packages\mcp-server\dist\index.js in your StarcallOS checkout.")
+    if len(parts) < 3 or parts[-1].lower() != "index.js" or parts[-2].lower() != "dist":
+        raise SetupError(r"Point it at your StarcallOS folder, or at packages\mcp-server\dist\index.js inside it.")
+    if len(path) > SERVER_PATH_MAX:
+        raise SetupError("That path is too long.")
     return path
 
 
