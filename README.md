@@ -194,7 +194,7 @@ bash scripts/pal-docker.sh connect calendar          # or drive, or gmail
 1. In your StarcallOS checkout, build the server: `pnpm -C packages/mcp-server build`. It needs Node 22.13 or newer on `PATH`.
 2. Open StarcallOS once after each update, so its database is current. The server refuses a database that's older or newer than itself.
 3. On pal's **Connections** page, under **On this PC**, paste the full path to `packages\mcp-server\dist\index.js` (Explorer's **Copy as path** is fine), choose what pal may search, and press **Save**, then **Test**. Saving a path works only in a browser on the PC, because pal runs that file.
-4. In a chat, tick **Search StarcallOS** above the messages, or type `/starcall on`.
+4. In a chat, open **MCP** (beside the model picker, under the message box) and switch StarcallOS on, or type `/starcall on`. A new chat can switch it on before the first message.
 
 What pal may search:
 
@@ -206,7 +206,7 @@ pal never asks for your StarcallOS highlights, notes or study progress. If pal's
 How it behaves:
 
 - **Off by default, per chat.** A new chat never searches StarcallOS. `/starcall` shows whether this chat does.
-- **Claude chats need both switches.** Search StarcallOS *and* "Share matching memories and documents with Claude" must be on. Then the matching passages are sent to Anthropic with your message.
+- **Claude chats need both switches.** StarcallOS (under **MCP**) *and* "Share matching memories and documents with Claude" must be on. Then the matching passages are sent to Anthropic with your message.
 - **Nothing copied.** Passages are shown while the reply is written. What pal saves with the reply is the citation: the source title and page, without the passage text. "Why these sources?" shows the same. The reply is the model's own words and can still quote a passage.
 - **Never in the way.** If StarcallOS is slow, busy or broken, the reply goes ahead with pal's own sources and a "StarcallOS skipped" note says why. After repeated failures pal waits before starting it again; **Test** retries at once.
 - **Treated as content.** Text from your library is information for the model, never instructions to follow.

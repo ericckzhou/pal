@@ -170,6 +170,13 @@ def get_conversation(conv_id: UUID, request: Request) -> dict:
     return {**conv, "gmail_connected": gmail_connected, "starcall_available": starcall_available}
 
 
+@private.get("/starcall/available")
+def starcall_available(request: Request) -> dict:
+    """Whether a chat could search StarcallOS (set up, on, native Windows), for a new chat that has no id yet."""
+    with request.app.state.pool.connection() as conn:
+        return {"available": starcall.available(starcall.connection(conn))}
+
+
 @private.get("/messages/{message_id}/trace")
 def get_trace(message_id: UUID, request: Request) -> dict:
     """Why a reply had the sources it had: candidate scores, reranker outcome, items trimmed for space."""

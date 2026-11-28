@@ -1,4 +1,5 @@
 import { KeyboardEvent, useEffect, useRef, useState } from "react";
+import { McpMenu } from "./McpMenu";
 import { api, isClaude, Message, Project, Proposal, Step, streamReply, THINKING_LEVELS, ThinkingLevel } from "./api";
 import { num } from "./format";
 import { Icon } from "./Icon";
@@ -113,10 +114,15 @@ export default function Chat({
       setThinking(null);
       setClaudeContext(false);
       setGmailConnected(false);
-      setStarcall(false);
-      setStarcallAvailable(false);
+      // A new chat has no conversation to ask yet, so it asks whether StarcallOS can be used at all.
+      api.starcallAvailable().then((r) => setStarcallAvailable(r.available)).catch(onAuthError);
     }
   }, [convId, listVersion, newChatModel, onAuthError]);
+
+  // A new chat starts with StarcallOS off; ticking it before the first message carries into the created chat.
+  useEffect(() => {
+    if (!convId) setStarcall(false);
+  }, [convId]);
 
   useEffect(() => {
     if (convId) loadConversation(convId);
@@ -135,8 +141,12 @@ export default function Chat({
   const ensureConversation = async () => {
     if (!idRef.current) {
       const id = (await api.create()).id;
-      if (newChatModel || thinking)
-        await api.patchConversation(id, { ...(newChatModel ? { model: newChatModel } : {}), ...(thinking ? { thinking } : {}) });
+      if (newChatModel || thinking || starcall)
+        await api.patchConversation(id, {
+          ...(newChatModel ? { model: newChatModel } : {}),
+          ...(thinking ? { thinking } : {}),
+          ...(starcall ? { starcall } : {}),
+        });
       idRef.current = id;
     }
     return idRef.current;
@@ -266,9 +276,9 @@ export default function Chat({
   };
 
   const changeStarcall = async (on: boolean) => {
-    if (!idRef.current) return;
     setError("");
     setStarcall(on); // flip at once; put it back if the save fails
+    if (!idRef.current) return; // a new chat applies it when it's created
     try {
       await api.patchConversation(idRef.current, { starcall: on });
     } catch (err) {
@@ -323,22 +333,6 @@ export default function Chat({
           <label className="chat-toggle" title="When on, pal searches your Gmail (read-only) when you ask about mail. Nothing from Gmail is stored.">
             <input type="checkbox" checked={gmail} onChange={(e) => changeGmail(e.target.checked)} />
             Search Gmail
-          </label>
-        )}
-        {convId && starcallAvailable && (
-          <label
-            className={`chat-toggle${starcall && isClaude(model) && !claudeContext ? " needs" : ""}`}
-            title={
-              !isClaude(model)
-                ? "When on, pal searches your StarcallOS library on this PC and uses at most 2 of its items per reply. None of their text is stored."
-                : claudeContext
-                  ? "When on, matching StarcallOS passages are sent to Anthropic with your message (at most 2 per reply). None of their text is stored."
-                  : "A Claude chat also needs \"Share matching memories and documents with Claude\" on before StarcallOS is searched."
-            }
-          >
-            <input type="checkbox" checked={starcall} onChange={(e) => changeStarcall(e.target.checked)} />
-            Search StarcallOS
-            {starcall && isClaude(model) && !claudeContext && <span className="muted"> (needs sharing)</span>}
           </label>
         )}
       </div>
@@ -431,6 +425,24 @@ export default function Chat({
             ))}
           </select>
         </label>
+        {starcallAvailable && (
+          <McpMenu
+            servers={[
+              {
+                id: "starcall",
+                name: "StarcallOS",
+                on: starcall,
+                detail: isClaude(model)
+                  ? "Your library; matching passages go to Anthropic (at most 2 per reply)"
+                  : "Your library on this PC; at most 2 items per reply, none stored",
+                warning: isClaude(model) && !claudeContext ? "Off until sharing with Claude is on (banner above)" : undefined,
+              },
+            ]}
+            onToggle={(id, on) => {
+              if (id === "starcall") changeStarcall(on);
+            }}
+          />
+        )}
         <ModelPicker value={model} onPick={pickModel} onAuthError={onAuthError} />
       </div>
       <div className="composer">

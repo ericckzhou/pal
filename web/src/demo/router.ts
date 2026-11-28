@@ -299,6 +299,7 @@ const routes: [string, RegExp, Handler][] = [
   ["POST", /^connections\//, () => { throw new DemoError(403, "Google isn't connected in the demo."); }],
   ["PATCH", /^connections\//, () => { throw new DemoError(403, "Google isn't connected in the demo."); }],
   ["DELETE", /^connections\//, () => { throw new DemoError(403, "Google isn't connected in the demo."); }],
+  ["GET", /^starcall\/available$/, () => ({ available: false })],
   ["PUT", /^connections\/starcall$/, () => { throw new DemoError(403, "StarcallOS can't be set up in the demo."); }],
   ["GET", /^devices$/, () => state.devices],
   ["POST", /^devices\/pairing$/, ({ body }) => ({

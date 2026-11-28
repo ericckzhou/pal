@@ -179,3 +179,15 @@ def test_save_completes_a_folder_on_the_way_to_the_server(authed, db, typed):
 
 def test_a_forward_slash_folder_keeps_its_slashes():
     assert starcall.clean_path("C:/sc/packages/mcp-server") == "C:/sc/packages/mcp-server/dist/index.js"
+
+
+def test_a_new_chat_can_ask_whether_starcall_is_available(authed, db):
+    assert authed.get("/api/starcall/available").json() == {"available": False}
+    authed.put(URL, json={"server_path": PATH})
+    assert authed.get("/api/starcall/available").json() == {"available": True}
+    authed.patch(URL, json={"enabled": False})
+    assert authed.get("/api/starcall/available").json() == {"available": False}
+
+
+def test_availability_needs_a_session(client):
+    assert client.get("/api/starcall/available").status_code == 401
