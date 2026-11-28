@@ -36,6 +36,7 @@ from . import (
     review_api,
     security,
     settings_store,
+    starcall,
     work_api,
 )
 from .auth import LoginLimiter
@@ -228,6 +229,8 @@ def create_app(settings: Settings | None = None, llm=None, start_background: boo
                 with suppress(asyncio.CancelledError):
                     await task
             await app.state.jobs.shutdown()
+            # Closes the StarcallOS session if one was started: the child exits, or its process tree is killed.
+            await asyncio.to_thread(starcall.close, app.state)
             app.state.pool.close()
 
     app = FastAPI(title="pal", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)

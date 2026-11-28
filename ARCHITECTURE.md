@@ -27,6 +27,8 @@ flowchart LR
         FS["Files on disk<br/>documents · encrypted backups · logs"]
     end
 
+    SC["StarcallOS MCP server<br/>(optional child process, stdio)"]
+    SDB[("StarcallOS database<br/>opened read-only")]
     AN["Anthropic API<br/>(optional, per chat)"]
 
     B1 -- "http://127.0.0.1:8765" --> API
@@ -38,6 +40,8 @@ flowchart LR
     pal -. reads secrets .-> CM
     pal --> FS
     API -. "only if a key is stored<br/>and the chat picked Claude" .-> AN
+    API -. "only if set up and<br/>the chat turned it on" .-> SC
+    SC --> SDB
 ```
 
 ## Tech stack
@@ -114,6 +118,8 @@ sequenceDiagram
     end
 ```
 
+When the chat allows StarcallOS, pal starts its library search as soon as the message arrives, so it runs while pal searches its own data. Its hits come back as one more ranked list, fused by rank with pal's own lists, and at most 2 of them reach the prompt with `[s1]` handles (see [StarcallOS](#starcallos-optional-windows-only)).
+
 When the chat uses Claude, the retrieval and project card steps are skipped by default, and Claude receives only the system prompt and this chat's own messages since it was switched to Claude. If you tick "Share matching memories and documents with Claude" for that chat, retrieval runs as usual (on the local models) and only the matching items go to Claude, listed under the reply.
 
 ### Background work
@@ -129,6 +135,20 @@ Four loops start with the server ([src/pal/app.py](src/pal/app.py)). Each runs i
 
 Slow, optional jobs such as re-reading old PDFs with Docling never start by themselves. You start them from the Documents page, which shows progress and lets you stop them.
 
+### StarcallOS (optional, Windows only)
+
+pal can search the user's [StarcallOS](https://github.com/ericckzhou/StarcallOS) library through StarcallOS's read-only MCP server. pal is the MCP *client* and decides every call itself: the model never sees the tools, and no model output chooses what is asked.
+
+- **One session per pal process** ([connectors/starcall.py](src/pal/connectors/starcall.py)). pal starts `node <path>/dist/index.js --scopes ...` as a child process on first use and keeps the stdio session open. A dedicated thread runs the asyncio loop that owns it; chat turns on worker threads submit calls to that loop, and MCP's request ids keep simultaneous chats apart. Before spawning, pal checks Node's version and the server file, so each common setup mistake gets its own message.
+- **The child gets an allowlisted environment** (`PATH`, `SYSTEMROOT`, `APPDATA`, `LOCALAPPDATA`, `USERPROFILE`, `TEMP`, `TMP`), so pal doesn't hand over its database login or `PAL_*` settings. This is not isolation: the server runs as the same Windows user with no sandbox. pal treats it as trusted local code at a path the owner chose, which is why only a browser on the PC can set that path.
+- **Per turn**, pal asks `search_passages` for 6 hits and, with the concepts scope, `search_concepts` at the same time ([starcall.py](src/pal/starcall.py)). Passages keep StarcallOS's own order; its score is never compared with pal's similarities. At most one concept is used, and only when its whole name is in the question. Retrieval fuses the list by rank and caps StarcallOS at 2 items.
+- **Fail-soft.** Each call has a 4 s deadline enforced inside the loop; at most 4 calls run at once, and a turn past that skips StarcallOS instead of queuing. Three timeouts in a row, a transport error or the child exiting end the session, and the next start waits out a cooldown (10 s, 30 s, 2 min, then 5 min). A server whose tools or results don't match what pal reads stays off until **Test**. Any failure adds a "StarcallOS skipped" step and the reply goes ahead with pal's own sources.
+- **Permission** needs every condition at once: the chat's `starcall` switch (off by default), the connection set up and not paused, native Windows, and in a Claude chat also that chat's `claude_context` sharing switch.
+- **Nothing from the library is stored.** Passage text goes into the prompt only. The saved sources keep ids, title and page with an empty snippet; the retrieval trace keeps ids and a "title p.N" label. The reply is stored like any other, so it can contain whatever the model quoted.
+- **Docker** never constructs the client. The connection row is a normal `connections` row (`provider='starcall'`, `service='library'`, `config` holding `server_path` and `scopes`), and the Google code paths skip it.
+
+The egress guard covers pal's own process only, so it doesn't cover the child. The StarcallOS server opens no listener and only fetches the loopback embedding URL pal passes it (`--embed-url`, the Ollama URL, only when that's loopback; otherwise `--no-embeddings`).
+
 ### Data model
 
 The schema lives in numbered SQL files in [migrations/](migrations/). `pal serve` applies any new ones at startup. The main groups of tables are:
@@ -138,6 +158,7 @@ The schema lives in numbered SQL files in [migrations/](migrations/). `pal serve
 - **Documents:** documents (with the folder they came from and the parser that read them) and their chunks (heading, page, text, embedding). Uploaded PDFs are also kept as encrypted files outside the database ([kept_uploads.py](src/pal/kept_uploads.py)), so they can be re-read.
 - **Work:** projects, tasks, notes (a decision is a note with `kind='decision'`), reminders, notifications and action proposals.
 - **Access:** the owner, sessions, paired devices and their passkeys.
+- **Connections:** connected Google services, what each one synced, and the optional StarcallOS connection (a server path and scopes; nothing synced). Each conversation has its own `gmail` and `starcall` switches.
 - **Other:** app settings (the values you can change in the UI) and weekly digest snapshots.
 
 ### Secrets
@@ -160,6 +181,7 @@ Three secrets exist: the database password, the backup encryption key (which als
 | **Every reply keeps a retrieval trace.** For each candidate pal stores its keyword and vector rank, similarity, fused score and outcome (sent, cut for space, dropped by the reranker, ranked too low), plus whether the reranker ran or fell back ([retrieval.py](src/pal/retrieval.py), `messages.retrieval_trace`). "Why these sources?" under a reply shows it. | A wrong or "I don't know" answer can be traced to search, reranking or the context budget instead of guessed at. | The trace stores ids and numbers only, never item text, so deleting a memory or document still removes its words; labels are looked up when the trace is opened and show "(deleted)" for removed items. |
 | **A small default model, chosen by measurement.** `qwen3.5:4b` with an 8,192-token context. | It passed bars set before testing ([results](eval/RESULTS.md)): chat 4.3/5, memory 19/20, actions 19/20, median latency under 1 s. | Weak at multi-step arithmetic and long reasoning. Thinking levels and optional Claude chats cover that. |
 | **Claude is opt-in per chat and sees only that chat.** Retrieval is skipped for Claude turns, and the network guard allows `api.anthropic.com` only when a key is stored. | A stronger model shouldn't quietly turn your private knowledge base into cloud traffic. | A per-chat switch can share matching items with Claude; it's off by default, and what was shared is listed under each reply. |
+| **StarcallOS is a tool pal calls, not one the model calls.** pal searches it on every turn of a chat that allows it, fuses the hits by rank and caps them at 2 ([starcall.py](src/pal/starcall.py)). | A small model choosing tool calls would be slower and less predictable, and library text could try to steer it. A cap keeps one large library from crowding out the owner's own notes. | It searches even when the question has nothing to do with the library. pal's similarity cutoff can't apply to StarcallOS scores, so the reranker judges its hits like any other item, and when the reranker is off or fails, a hit is kept only if it matched a keyword. The server runs unsandboxed as the owner, so the path is trusted and can only be set from the PC. |
 | **Network blocked inside the process.** At startup pal patches `socket` so any non-loopback connection or DNS lookup fails ([egress.py](src/pal/egress.py)). | Catches libraries that "phone home" without needing admin rights or firewall rules. | Covers only pal's process, not Ollama, Docker or other programs. A firewall would be stronger (the owner chose not to add one). |
 | **Loopback only; remote access through Tailscale.** pal won't bind to anything but `127.0.0.1`, and remote devices still have to sign in to pal. | HTTPS and a private network with no open ports or certificates to manage. Tailscale identity headers are ignored. | Each device needs Tailscale installed. |
 | **Password at the PC, passkeys elsewhere.** Other devices pair with a one-time code (10 minutes), then use a passkey. Device sessions last 30 days, or 14 days unused. | Passkeys can't be phished or reused, and a lost phone can be revoked instantly. | Pairing has to start from the PC or the command line. |
@@ -173,6 +195,7 @@ Three secrets exist: the database password, the backup encryption key (which als
 ## Testing
 
 - `tests/` runs against a real Postgres test database (`pal_test`, or whatever `PAL_TEST_DB` says) with a fake LLM and a fake embedder tuned to behave like the real model's similarity scale. Each security rule (the S-numbers in module docstrings) has at least one test.
+- The StarcallOS client is tested against a fake stdio MCP server in a real child process (startup, timeouts, crashes, contract checks, shutdown), and the chat path with a fake client that plants a marker in every passage so tests can prove none of it is stored.
 - `eval/run.py` compares models on chat, memory extraction and action proposals against fixed pass bars. It runs locally with no network.
 - `eval/retrieval_eval.py` measures search quality with the real embedding model on two made-up sets: the [tuning set](eval/retrieval/corpus.json) (60 questions) that the cut-offs were calibrated on, and a [held-out set](eval/retrieval/heldout.json) (101 questions, with chunked documents, past chats and near-miss questions) that was never used for tuning and is scored strictly by item id. It reports recall@6, MRR and how often pal correctly returns nothing, with 95% confidence intervals. Results are in [eval/RETRIEVAL.md](eval/RETRIEVAL.md).
 - GitHub Actions runs ruff, mypy, the test suite with an 80% coverage floor (against a real Postgres container), ESLint, and both web builds on every push.

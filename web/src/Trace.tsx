@@ -7,7 +7,14 @@ const DECISION: Record<TraceDecision, string> = {
   reranker_dropped: "dropped by reranker",
   ranked_lower: "ranked too low",
 };
-const KIND = { memory: "memory", document: "doc", conversation: "chat", note: "note", project: "project" } as const;
+const KIND = { memory: "memory", document: "doc", conversation: "chat", note: "note", project: "project", starcall: "StarcallOS" } as const;
+
+function starcallLine(s: RetrievalTrace["starcall"]): string | null {
+  if (!s) return null;
+  if (s.status === "failed") return `StarcallOS skipped (${s.reason ?? "failed"})`;
+  const mode = s.mode_used ? `, ${s.mode_used}` : "";
+  return `StarcallOS: ${s.returned} item${s.returned === 1 ? "" : "s"} in ${s.ms ?? "?"} ms${mode}`;
+}
 
 function rerankLine(r: RetrievalTrace["rerank"]): string {
   if (r.status === "ran") return `reranker kept ${r.kept} of ${r.pool}`;
@@ -23,6 +30,7 @@ function summary(t: RetrievalTrace): string {
     `${t.fused} candidate${t.fused === 1 ? "" : "s"}`,
     rerankLine(t.rerank),
     cut ? `${cut} below the similarity cutoff` : null,
+    starcallLine(t.starcall),
   ].filter(Boolean).join(" · ");
 }
 

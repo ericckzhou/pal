@@ -28,10 +28,13 @@ Problems in pal's own code, for example:
 - reading data from backups or kept uploads without the key
 - injection (SQL, prompt-to-action) that changes data without the owner confirming
 - cross-site attacks against the web app (XSS, CSRF, Host or Origin header tricks)
+- StarcallOS library text being stored by pal, reaching Anthropic without both of that chat's switches on, or being searched in a chat that didn't turn it on
+- setting the StarcallOS server path from anywhere but a browser on the PC
 
 ## What's out of scope
 
 - attacks that need admin or physical access to the owner's PC
+- what the StarcallOS server can do once started: pal runs it as the owner's Windows user with no sandbox, as trusted local code at a path the owner chose (report StarcallOS bugs to [its repo](https://github.com/ericckzhou/StarcallOS/security))
 - problems in Ollama, PostgreSQL, Docker, Tailscale or other dependencies: please report those upstream (a note to me is still welcome if pal uses them unsafely)
 - the [public demo](https://pal-assistant-demo.vercel.app), which runs only made-up data in the browser with no backend
 - the limits pal already documents in the README's [Privacy and security](README.md#privacy-and-security) section, such as the egress guard covering only pal's own process

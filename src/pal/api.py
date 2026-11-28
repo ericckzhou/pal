@@ -1,5 +1,6 @@
 """HTTP API. Every route except login/me requires a valid session (S2)."""
 
+import concurrent.futures
 import json
 import logging
 import re
@@ -23,6 +24,7 @@ from . import (
     model_cmd,
     reminders,
     retrieval,
+    starcall,
     thinking,
     work,
 )
@@ -161,9 +163,11 @@ def get_conversation(conv_id: UUID, request: Request) -> dict:
     with request.app.state.pool.connection() as conn:
         conv = conversations.get_conversation(conn, conv_id)
         gmail_connected = mail.connected(conn)
+        starcall_available = starcall.available(starcall.connection(conn))
     if conv is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
-    return {**conv, "gmail_connected": gmail_connected}  # the chat shows its Gmail switch only when it can matter
+    # The chat shows its Gmail and StarcallOS switches only when they can matter.
+    return {**conv, "gmail_connected": gmail_connected, "starcall_available": starcall_available}
 
 
 @private.get("/messages/{message_id}/trace")
@@ -207,7 +211,7 @@ def _event(**data) -> str:
     return json.dumps(data, default=str) + "\n"
 
 
-_CITE = re.compile(r"\s?\[([mdcnpeg]\d+)\](?!\()")
+_CITE = re.compile(r"\s?\[([mdcnpegs]\d+)\](?!\()")
 
 
 def strip_unknown_handles(reply: str, sources: list[dict]) -> str:
@@ -242,6 +246,8 @@ def _command_reply(state, conv_id: UUID, content: str) -> StreamingResponse:
             result["changed"] = False
         elif cmd.lower() == "/gmail":
             result = mail.run_command(conn, conv_id, arg)
+        elif cmd.lower() == "/starcall":
+            result = starcall.run_command(conn, conv_id, arg)
         else:
             result = actions.run_command(conn, conv_id, content)
         step = {"kind": "command", "label": f"Ran {content.split()[0]}", "detail": None}
@@ -257,6 +263,8 @@ def _command_reply(state, conv_id: UUID, content: str) -> StreamingResponse:
             yield _event(type="model_changed", model=result["model"])
         if result.get("thinking_changed"):
             yield _event(type="thinking_changed", thinking=result["thinking"])
+        if result.get("starcall_changed"):
+            yield _event(type="starcall_changed", starcall=result["starcall"])
         yield _event(type="token", text=result["reply"])
         yield _event(type="done", message_id=msg_id)
 
@@ -265,7 +273,8 @@ def _command_reply(state, conv_id: UUID, content: str) -> StreamingResponse:
 
 _KIND_LABEL = {"memory": "memory", "document": "document", "conversation": "past chat", "note": "note",
                "project": "project", "event": "calendar event", "calendar": "calendar note", "email": "email",
-               "mail": "Gmail search"}
+               "mail": "Gmail search", "starcall:passage": "StarcallOS passage",
+               "starcall:concept": "StarcallOS concept"}
 
 
 def _steps(sources: list[dict], saved: dict | None, proposal: dict | None, trace: dict | None = None,
@@ -275,7 +284,8 @@ def _steps(sources: list[dict], saved: dict | None, proposal: dict | None, trace
     if sources:
         kinds: dict[str, int] = {}
         for src in sources:
-            kinds[src["kind"]] = kinds.get(src["kind"], 0) + 1
+            kind = f"{src['kind']}:{src.get('starcall_kind')}" if src["kind"] == starcall.KIND else src["kind"]
+            kinds[kind] = kinds.get(kind, 0) + 1
         detail = ", ".join(f"{n} {_KIND_LABEL.get(k, k)}{'s' if n > 1 else ''}" for k, n in kinds.items())
         plural = "s" if len(sources) > 1 else ""
         steps.append({"kind": "retrieval", "label": f"Looked up {len(sources)} source{plural}", "detail": detail})
@@ -283,6 +293,9 @@ def _steps(sources: list[dict], saved: dict | None, proposal: dict | None, trace
         # Without this card, abstention quietly gets worse while the model is struggling.
         steps.append({"kind": "notice", "label": "Reranking skipped",
                       "detail": "The model couldn't check the search results, so they're in plain search order"})
+    skipped = starcall.notice(trace)
+    if skipped:
+        steps.append(skipped)
     if saved:
         steps.append({"kind": "memory", "label": "Saved to memory", "detail": saved["text"][:200]})
     if proposal:
@@ -318,9 +331,20 @@ def post_message(conv_id: UUID, body: MessageBody, request: Request) -> Streamin
         # Retrieve before saving a stated memory, so the reply isn't "about" the note it was just given.
         trace: dict | None = None
         mail_step: dict | None = None
+        library: concurrent.futures.Future[starcall.Lookup] | starcall.Lookup | None = None  # when the chat allows it
         if cloud and not conv.get("claude_context"):
             items = []  # by default Claude gets only this chat's own text: no memories, documents, notes or project card
         else:  # a local model, or a Claude chat whose owner opted in to sharing what matches (claude_context)
+            row = starcall.connection(conn)
+            if starcall.allowed(conv, row):
+                try:
+                    cfg = starcall.config_from(row, state.settings.ollama_url)
+                    sc = starcall.client(state, cfg) if cfg else None
+                    if sc is not None:  # started now, so it runs while pal searches its own data
+                        library = starcall.lookup_future(sc, _retrieval_query(past))
+                except Exception as exc:  # StarcallOS never breaks a reply
+                    log.exception("StarcallOS lookup could not start")
+                    library = starcall.failed(exc)
             focus = _project_item(conn, conv_id)
             focus_id = UUID(focus[0]["id"]) if focus else None
             trace = {}
@@ -333,8 +357,11 @@ def post_message(conv_id: UUID, body: MessageBody, request: Request) -> Streamin
                 items += mail_items
             items += retrieval.retrieve(
                 conn, state.llm, _retrieval_query(past), conv_id, focus_id, use_rerank=state.settings.rerank == "on",
-                trace=trace,
+                trace=trace, external=library,
             )
+            if library is not None:
+                done = library if isinstance(library, starcall.Lookup) else starcall.finished(library)
+                starcall.record(conn, done, trace)
         saved = None
         note = None
         stated = memory.parse_remember(body.content)
@@ -358,7 +385,8 @@ def post_message(conv_id: UUID, body: MessageBody, request: Request) -> Streamin
         if trace:
             trace = retrieval.mark_trimmed(trace, used)
     steps = _steps(sources, saved, proposal, trace, mail_step)
-    kept_sources = [mail.stored_source(s) for s in sources]  # an email's text is shown now, never kept
+    # An email's or a StarcallOS passage's text is shown now, never kept.
+    kept_sources = [starcall.stored_source(mail.stored_source(s)) for s in sources]
 
     def unsent(message: str) -> str:
         """The reply failed: drop the unanswered user message (the UI puts its text back in the box to resend)."""

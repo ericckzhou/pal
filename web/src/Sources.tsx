@@ -6,11 +6,18 @@ export type SourceActions = {
   onOpenMemory: () => void;
 };
 
-const KIND_LABEL = { memory: "Memory", document: "Document", conversation: "Past chat", note: "Note", project: "Project" } as const;
-const kindLabel = (s: Source) => (s.kind === "memory" && s.pinned ? "Pinned memory" : KIND_LABEL[s.kind]);
+const KIND_LABEL = { memory: "Memory", document: "Document", conversation: "Past chat", note: "Note", project: "Project", starcall: "Passage" } as const;
+const kindLabel = (s: Source) => {
+  if (s.kind === "memory" && s.pinned) return "Pinned memory";
+  if (s.kind === "starcall" && s.starcall_kind === "concept") return "Concept";
+  return KIND_LABEL[s.kind];
+};
+
+export const pageLabel = (start: number | null, end?: number | null) =>
+  start == null ? "" : end == null || end === start ? `p.${start}` : `pp.${start}–${end}`;
 
 export function citedHandles(text: string): Set<string> {
-  return new Set(Array.from(text.matchAll(/\[([mdcnp]\d+)\]/g), (m) => m[1]));
+  return new Set(Array.from(text.matchAll(/\[([mdcnps]\d+)\]/g), (m) => m[1]));
 }
 
 function label(s: Source): string {
@@ -18,6 +25,10 @@ function label(s: Source): string {
   if (s.kind === "note") return `${s.title ?? "note"}: ${s.snippet.length > 80 ? `${s.snippet.slice(0, 80)}…` : s.snippet}`;
   if (s.kind === "project") return s.title ?? "Project";
   if (s.kind === "document") return `${s.title ?? "Document"}${s.page ? `, p.${s.page}` : ""}`;
+  if (s.kind === "starcall") {
+    const pages = pageLabel(s.page, s.page_end);
+    return `${s.title ?? "StarcallOS"}${pages ? `, ${pages}` : ""}`;
+  }
   return `${s.title ?? "Chat"}${s.at ? ` · ${s.at}` : ""}`;
 }
 
@@ -49,11 +60,23 @@ function SourceRow({ s, actions, anchor }: { s: Source; actions: SourceActions; 
   return (
     <div className="source" id={`src-${anchor}${s.handle}`}>
       <button className="link source-head" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
-        <span className="cite">{s.handle}</span> {kindLabel(s)}: {label(s)}
+        <span className="cite">{s.handle}</span>{" "}
+        {s.kind === "starcall" && (
+          <>
+            <span className="src-tag" title="From your StarcallOS library">StarcallOS</span>{" "}
+          </>
+        )}
+        {kindLabel(s)}: {label(s)}
       </button>
       {open && (
         <div className="source-body">
-          <p>{s.snippet}</p>
+          {s.snippet ? (
+            <p>{s.snippet}</p>
+          ) : s.kind === "starcall" ? (
+            <p className="muted">pal doesn't keep StarcallOS text. Open this page in StarcallOS to read it again.</p>
+          ) : (
+            <p>{s.snippet}</p>
+          )}
           {s.kind === "conversation" && s.conversation_id && (
             <button className="small" onClick={() => actions.onOpenConversation(s.conversation_id!)}>
               Open chat

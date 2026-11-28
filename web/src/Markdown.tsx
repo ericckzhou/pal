@@ -26,7 +26,7 @@ function normalizeMath(text: string): string {
 export function Markdown({ text, cites, anchor = "" }: { text: string; cites?: Set<string>; anchor?: string }) {
   // Handles the model invented (not in this reply's sources) are dropped rather than shown as fake citations.
   const cited = cites
-    ? text.replace(/\s?\[([mdcnp]\d+)\](?!\()/g, (whole, h: string) =>
+    ? text.replace(/\s?\[([mdcnps]\d+)\](?!\()/g, (whole, h: string) =>
         cites.has(h) ? whole.replace(`[${h}]`, `[${h}](#src-${anchor}${h})`) : "",
       )
     : text;

@@ -1,5 +1,16 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import { api, ConnectableService, Connection, ConnectionsReport, DriveFolder, GoogleService, Project } from "./api";
+import {
+  api,
+  ConnectableService,
+  Connection,
+  ConnectionsReport,
+  DriveFolder,
+  GoogleService,
+  Project,
+  StarcallCard,
+  StarcallRuntime,
+  StarcallScope,
+} from "./api";
 import ProjectSelect, { useProjects } from "./ProjectSelect";
 
 type Props = { onAuthError: (err: unknown) => void };
@@ -141,6 +152,10 @@ export default function Connections({ onAuthError }: Props) {
             <NotConnected key={s.service} s={s} ready={report.google_client} busy={busy} run={run} />
           );
         })}
+      </ul>
+      <h3 className="conn-group">On this PC</h3>
+      <ul className="memory-list">
+        <Starcall card={report.starcall} busy={busy} run={run} />
       </ul>
     </section>
   );
@@ -318,5 +333,155 @@ function DriveFolders({ c, busy, run }: { c: Connection; busy: boolean; run: Run
         <button disabled={busy || !link.trim()}>Add folder</button>
       </form>
     </div>
+  );
+}
+
+const PATH_HINT = "C:\\…\\StarcallOS\\packages\\mcp-server\\dist\\index.js";
+
+function runtimeLine(r: StarcallRuntime | null): string | null {
+  if (!r) return null;
+  if (r.state === "running") return "server running";
+  if (r.state === "cooldown") return `waiting ${Math.ceil(r.retry_in ?? 0)} s before trying again`;
+  if (r.state === "disabled") return "off until you press Test";
+  return null;
+}
+
+function testMessage(r: { ok: boolean; status: StarcallRuntime }): string {
+  if (r.ok) return "StarcallOS answered. Chats with Search StarcallOS on can use it now.";
+  throw new Error(r.status.error?.message ?? "StarcallOS didn't start. See the card for details.");
+}
+
+/** StarcallOS: a server path pal runs on this PC, not a sign-in. Its library is searched live and never stored. */
+function Starcall({ card, busy, run }: { card: StarcallCard; busy: boolean; run: Run }) {
+  const c = card.connection;
+  const savedPath = c?.server_path ?? "";
+  const savedScopes = (c?.scopes ?? ["passages"]).join(",");
+  const [path, setPath] = useState(savedPath);
+  const [scopes, setScopes] = useState<StarcallScope[]>(savedScopes.split(",") as StarcallScope[]);
+  const [testing, setTesting] = useState(false);
+  const [confirm, setConfirm] = useState(false);
+  useEffect(() => {
+    setPath(savedPath);
+    setScopes(savedScopes.split(",") as StarcallScope[]);
+  }, [savedPath, savedScopes]);
+
+  const dirty = path.trim() !== savedPath || scopes.join(",") !== savedScopes;
+  const state = !c ? "none" : !c.enabled ? "paused" : c.last_error ? "error" : c.last_ok_at ? "on" : "waiting";
+  const label = { none: "not set up", paused: "paused", error: "not working", on: "connected", waiting: "not tested yet" }[state];
+  const toggle = (name: StarcallScope, on: boolean) =>
+    setScopes((cur) => card.scopes.map((s) => s.name).filter((n) => n === "passages" || (n === name ? on : cur.includes(n))));
+  const save = (e: FormEvent) => {
+    e.preventDefault();
+    run(async () => {
+      await api.saveStarcall(path, scopes);
+      return c ? "Saved. Press Test to check it." : "Saved. Press Test to check that pal can start it.";
+    });
+  };
+  const test = () => {
+    setTesting(true);
+    run(async () => testMessage(await api.testStarcall())).finally(() => setTesting(false));
+  };
+  const extra = runtimeLine(card.runtime);
+
+  return (
+    <li className={`memory-item conn conn-${state === "none" ? "waiting" : state}`}>
+      <p className="memory-text">
+        <strong>StarcallOS</strong> <span className={`badge conn-state conn-${state}`}>{label}</span>
+      </p>
+      <p className="small muted">
+        Your StarcallOS library, searched live when a chat has <em>Search StarcallOS</em> on (off by default). pal starts
+        StarcallOS's read-only server on this PC, uses at most 2 of its items per reply, and keeps none of their text.
+      </p>
+      {!card.native ? (
+        <p className="small notice-inline">{card.reason}.</p>
+      ) : (
+        <>
+          <form className="conn-starcall" onSubmit={save}>
+            <label className="small conn-path">
+              Server path
+              <input
+                value={path}
+                onChange={(e) => setPath(e.target.value)}
+                placeholder={PATH_HINT}
+                aria-label="StarcallOS server path"
+                spellCheck={false}
+                disabled={busy}
+              />
+            </label>
+            <fieldset className="conn-scopes small" disabled={busy}>
+              <legend>What pal may search</legend>
+              {card.scopes.map((s) => (
+                <label key={s.name}>
+                  <input
+                    type="checkbox"
+                    checked={s.name === "passages" || scopes.includes(s.name)}
+                    disabled={s.name === "passages"}
+                    onChange={(e) => toggle(s.name, e.target.checked)}
+                  />
+                  {s.label} <span className="muted">— {s.what}</span>
+                </label>
+              ))}
+            </fieldset>
+            <div className="memory-meta small">
+              <button className={c ? "small" : "small primary"} disabled={busy || !path.trim() || !dirty}>
+                {c ? "Save changes" : "Save"}
+              </button>
+              {!c && (
+                <span className="muted">
+                  Build it first: <code>pnpm -C packages/mcp-server build</code> in your StarcallOS checkout (needs Node 22.13+).
+                </span>
+              )}
+            </div>
+          </form>
+          {c && (
+            <>
+              <div className="memory-meta small muted">
+                {c.last_ok_at && <span title={c.last_ok_at}>answered {ago(c.last_ok_at)}</span>}
+                <span>{card.meaning_search ? "keyword + meaning search (pal's Ollama)" : "keyword search only"}</span>
+                {extra && <span>{extra}</span>}
+              </div>
+              {c.last_error && <p className="error small conn-error-text">{c.last_error}</p>}
+              <div className="memory-meta small">
+                <button className="small primary" disabled={busy || dirty} onClick={test} title="Start StarcallOS's server and check that it answers">
+                  {testing ? "Testing…" : "Test"}
+                </button>
+                {dirty && <span className="muted">Save first</span>}
+                <span className="spacer" />
+                <button
+                  className="small"
+                  disabled={busy}
+                  title={c.enabled ? "Chats stop searching StarcallOS and its server stops; nothing is removed" : undefined}
+                  onClick={() => run(async () => (await api.pauseStarcall(!c.enabled), c.enabled ? "Paused." : "Resumed."))}
+                >
+                  {c.enabled ? "Pause" : "Resume"}
+                </button>
+                {confirm ? (
+                  <>
+                    <button
+                      className="danger small"
+                      disabled={busy}
+                      onClick={() => run(async () => (await api.removeStarcall(), setConfirm(false), "Removed StarcallOS. Nothing in StarcallOS changed."))}
+                    >
+                      Remove
+                    </button>
+                    <button className="small" onClick={() => setConfirm(false)}>
+                      Keep
+                    </button>
+                  </>
+                ) : (
+                  <button className="small" disabled={busy} onClick={() => setConfirm(true)} title="Forget the server path; pal copied nothing from StarcallOS">
+                    Remove
+                  </button>
+                )}
+              </div>
+            </>
+          )}
+          <p className="small muted">
+            StarcallOS runs as you, with no sandbox, so only point this at your own StarcallOS checkout. pal doesn't hand
+            it pal's database login or settings.
+          </p>
+        </>
+      )}
+    </li>
   );
 }
