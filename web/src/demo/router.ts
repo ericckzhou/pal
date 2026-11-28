@@ -105,6 +105,14 @@ const demoConnections = {
     project_id: null, config: { folders: [{ id: "demo-folder", name: "Notes" }] }, last_sync_at: new Date().toISOString(),
     last_ok_at: new Date().toISOString(), last_error: null, created_at: new Date().toISOString(), items: 12,
   }],
+  // StarcallOS runs on the visitor's own PC, so the demo shows it not set up.
+  starcall: {
+    native: true, reason: null, meaning_search: true, connection: null, runtime: null,
+    scopes: [
+      { name: "passages", label: "Passages", what: "Search the indexed text of your StarcallOS sources. Always on: it's what chats look things up in." },
+      { name: "concepts", label: "Concepts", what: "Also match a concept by name when its whole name is in your question (its name and definition)." },
+    ],
+  },
 };
 
 const routes: [string, RegExp, Handler][] = [
@@ -291,6 +299,7 @@ const routes: [string, RegExp, Handler][] = [
   ["POST", /^connections\//, () => { throw new DemoError(403, "Google isn't connected in the demo."); }],
   ["PATCH", /^connections\//, () => { throw new DemoError(403, "Google isn't connected in the demo."); }],
   ["DELETE", /^connections\//, () => { throw new DemoError(403, "Google isn't connected in the demo."); }],
+  ["PUT", /^connections\/starcall$/, () => { throw new DemoError(403, "StarcallOS can't be set up in the demo."); }],
   ["GET", /^devices$/, () => state.devices],
   ["POST", /^devices\/pairing$/, ({ body }) => ({
     code: "DEMO-7QX2", name: body.name, kind: body.kind, expires_at: new Date(Date.now() + 10 * MIN).toISOString(),

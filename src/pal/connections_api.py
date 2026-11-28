@@ -1,4 +1,8 @@
-"""Connected services (PC only): list them, sync now, pause or resume, disconnect. Plus calendar events to read."""
+"""Connected services (PC only): list them, sync now, pause or resume, disconnect. Plus calendar events to read.
+
+StarcallOS has its own routes under /starcall (a server path to run, not a Google sign-in); they're declared before
+the /{connection_id} routes, which would otherwise claim the path.
+"""
 
 from datetime import date, datetime, time, timedelta
 from uuid import UUID
@@ -9,7 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 
-from . import calendar, egress, reminders
+from . import calendar, egress, reminders, starcall
 from .api import is_local, require_owner, require_session
 from .config import in_container
 from .connectors import drive_folders, google, google_auth, google_web, hosts, store, sync
@@ -35,6 +39,15 @@ class FolderAdd(BaseModel):
     link: str = Field(min_length=1, max_length=drive_folders.LINK_MAX)
 
 
+class StarcallSetup(BaseModel):
+    server_path: str = Field(min_length=1, max_length=starcall.SERVER_PATH_MAX + 10)  # room for quotes and spaces
+    scopes: list[str] = Field(default_factory=lambda: ["passages"], max_length=len(starcall.SCOPE_INFO))
+
+
+class StarcallPatch(BaseModel):
+    enabled: bool
+
+
 def _services() -> list[dict]:
     """What can be connected, and the terminal command that also does it (the page has a sign-in button)."""
     docker = in_container()
@@ -52,10 +65,62 @@ def _public(row: dict) -> dict:
 def list_connections(request: Request) -> dict:
     with request.app.state.pool.connection() as conn:
         rows = [_public(r) for r in store.list_all(conn)]
+        library = _starcall_card(request, conn)
     client_cmd = ("bash scripts/pal-docker.sh google-client client.json" if in_container()
                   else "pal google-client --set client.json")
     return {"connections": rows, "google_client": google_auth.load_client() is not None, "client_command": client_cmd,
-            "services": _services(), "signin": _sign_ins(request).pop_outcome()}
+            "services": _services(), "signin": _sign_ins(request).pop_outcome(), "starcall": library}
+
+
+def _starcall_card(request: Request, conn: psycopg.Connection) -> dict:
+    state = request.app.state
+    return starcall.public(state, starcall.connection(conn), state.settings.ollama_url)
+
+
+@router.put("/starcall")
+def starcall_save(body: StarcallSetup, request: Request) -> dict:
+    """Set the server path and scopes. Only from a browser on this PC: pal runs the file at that path."""
+    if not is_local(request):
+        raise HTTPException(status_code=403, detail="Set up StarcallOS from a browser on the PC running pal.")
+    with request.app.state.pool.connection() as conn:
+        try:
+            starcall.save(conn, body.server_path, body.scopes)
+        except starcall.SetupError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return _starcall_card(request, conn)
+
+
+@router.patch("/starcall")
+def starcall_pause(body: StarcallPatch, request: Request) -> dict:
+    """Pause or resume. Pausing also stops the server process; the next chat that may use it starts it again."""
+    with request.app.state.pool.connection() as conn:
+        if not starcall.set_enabled(conn, body.enabled):
+            raise HTTPException(status_code=404, detail="StarcallOS isn't set up")
+        if not body.enabled:
+            starcall.close(request.app.state)
+        return _starcall_card(request, conn)
+
+
+@router.post("/starcall/test")
+def starcall_test(request: Request) -> dict:
+    """Start the server for the saved settings and say whether it answered. Waits up to the start timeout."""
+    state = request.app.state
+    with state.pool.connection() as conn:
+        try:
+            status = starcall.test(state, conn, state.settings.ollama_url)
+        except starcall.SetupError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {"ok": status["state"] == "running", "status": status, "card": _starcall_card(request, conn)}
+
+
+@router.delete("/starcall")
+def starcall_remove(request: Request) -> dict:
+    """Remove the connection and stop the server. Each chat's switch is kept but does nothing without it."""
+    with request.app.state.pool.connection() as conn:
+        if not starcall.remove(conn):
+            raise HTTPException(status_code=404, detail="StarcallOS isn't set up")
+        starcall.close(request.app.state)
+        return _starcall_card(request, conn)
 
 
 def _sign_ins(request: Request) -> google_web.SignIns:
@@ -112,8 +177,7 @@ def google_callback(request: Request) -> RedirectResponse:
 def sync_now(connection_id: UUID, request: Request) -> dict:
     state = request.app.state
     with state.pool.connection() as conn:
-        if store.get(conn, connection_id) is None:
-            raise HTTPException(status_code=404, detail="No such connection")
+        _google(conn, connection_id)
         stop = getattr(getattr(state, "jobs", None), "stop", None)
         return sync.sync_one(conn, connection_id, stop)
 
@@ -121,8 +185,7 @@ def sync_now(connection_id: UUID, request: Request) -> dict:
 @router.patch("/{connection_id}")
 def update(connection_id: UUID, body: Patch, request: Request) -> dict:
     with request.app.state.pool.connection() as conn:
-        if store.get(conn, connection_id) is None:
-            raise HTTPException(status_code=404, detail="No such connection")
+        _google(conn, connection_id)
         if body.enabled is not None:
             store.set_enabled(conn, connection_id, body.enabled)
         if "project_id" in body.model_fields_set:
@@ -131,6 +194,14 @@ def update(connection_id: UUID, body: Patch, request: Request) -> dict:
             except psycopg.errors.ForeignKeyViolation as exc:
                 raise HTTPException(status_code=422, detail="No such project") from exc
         return _public(store.get(conn, connection_id) or {})
+
+
+def _google(conn: psycopg.Connection, connection_id: UUID) -> dict:
+    """A Google connection. The StarcallOS row has its own routes (no sync, tokens or items to remove)."""
+    row = store.get(conn, connection_id)
+    if row is None or row["provider"] != "google":
+        raise HTTPException(status_code=404, detail="No such connection")
+    return row
 
 
 def _drive(conn: psycopg.Connection, connection_id: UUID) -> dict:
@@ -172,8 +243,7 @@ def remove_folder(connection_id: UUID, folder_id: str, request: Request) -> dict
 @router.delete("/{connection_id}")
 def disconnect(connection_id: UUID, request: Request) -> dict:
     with request.app.state.pool.connection() as conn:
-        if store.get(conn, connection_id) is None:
-            raise HTTPException(status_code=404, detail="No such connection")
+        _google(conn, connection_id)
         with httpx.Client() as http:
             return google.disconnect(conn, connection_id, http)
 

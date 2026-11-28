@@ -27,8 +27,9 @@ from uuid import UUID
 
 import psycopg
 from psycopg.rows import dict_row
+from psycopg.types.json import Jsonb
 
-from . import claude
+from . import claude, db
 from .config import in_container
 from .connectors.starcall import (
     SCOPES,
@@ -39,6 +40,7 @@ from .connectors.starcall import (
     StarcallClient,
     StarcallConfig,
     StarcallError,
+    is_loopback,
 )
 
 log = logging.getLogger("pal.starcall")
@@ -268,6 +270,126 @@ def close(state) -> None:
     if current is not None:
         state.starcall = None
         current.close()
+
+
+# ── the Connections page ───────────────────────────────────────────────────────────────────────────────────────────
+
+SERVER_PATH_MAX = 1000
+SCOPE_INFO = [
+    {"name": "passages", "label": "Passages",
+     "what": "Search the indexed text of your StarcallOS sources. Always on: it's what chats look things up in."},
+    {"name": "concepts", "label": "Concepts",
+     "what": "Also match a concept by name when its whole name is in your question (its name and definition)."},
+]
+
+
+class SetupError(ValueError):
+    pass
+
+
+def clean_path(raw: str) -> str:
+    """The server path as saved. Takes Explorer's "Copy as path" quotes; the file itself is checked by Test."""
+    path = raw.strip().strip('"').strip()
+    if not path:
+        raise SetupError("Enter the path to the StarcallOS MCP server.")
+    if len(path) > SERVER_PATH_MAX:
+        raise SetupError("That path is too long.")
+    if not (re.match(r"^[A-Za-z]:[\\/]", path) or path.startswith(("\\\\", "/"))):
+        raise SetupError(r"Use the full path, starting with the drive (C:\...).")
+    parts = re.split(r"[\\/]+", path)
+    if len(parts) < 2 or parts[-1].lower() != "index.js" or parts[-2].lower() != "dist":
+        raise SetupError(r"Point it at packages\mcp-server\dist\index.js in your StarcallOS checkout.")
+    return path
+
+
+def clean_scopes(raw: list[str]) -> list[str]:
+    unknown = [s for s in raw if s not in SCOPES]
+    if unknown:
+        raise SetupError(f"Unknown scope: {', '.join(unknown)}.")
+    return [s for s in SCOPES if s == "passages" or s in raw]  # passages is what chats search, so it's always on
+
+
+def save(conn: psycopg.Connection, server_path: str, scopes: list[str]) -> dict:
+    """Add the StarcallOS connection, or change its path and scopes. A change clears the old outcome until a Test."""
+    config = {"server_path": clean_path(server_path), "scopes": clean_scopes(scopes)}
+    conn.execute(
+        "INSERT INTO connections (provider, service, config) VALUES (%s, %s, %s) "
+        "ON CONFLICT (provider, service) DO UPDATE SET config = EXCLUDED.config, "
+        "last_error = CASE WHEN connections.config = EXCLUDED.config THEN connections.last_error END, "
+        "last_ok_at = CASE WHEN connections.config = EXCLUDED.config THEN connections.last_ok_at END",
+        (PROVIDER, SERVICE, Jsonb(config)),
+    )
+    return db.require(connection(conn), "connection")
+
+
+def set_enabled(conn: psycopg.Connection, enabled: bool) -> bool:
+    return conn.execute("UPDATE connections SET enabled = %s WHERE provider = %s AND service = %s",
+                        (enabled, PROVIDER, SERVICE)).rowcount == 1
+
+
+def remove(conn: psycopg.Connection) -> bool:
+    """Forget the connection. pal copied nothing from StarcallOS, so there's nothing else to delete."""
+    return conn.execute("DELETE FROM connections WHERE provider = %s AND service = %s",
+                        (PROVIDER, SERVICE)).rowcount == 1
+
+
+def runtime(state, row: dict | None, ollama_url: str | None) -> dict | None:
+    """The running client's state, if it was made for the config saved now (an older one is about to be replaced)."""
+    current = getattr(state, "starcall", None)
+    cfg = config_from(row, ollama_url)
+    if current is None or cfg is None or current.cfg != cfg:
+        return None
+    return current.status()
+
+
+def public(state, row: dict | None, ollama_url: str | None) -> dict:
+    """The StarcallOS card. The path and scopes are the owner's own settings; nothing from the library is in here."""
+    embed = f"{ollama_url.rstrip('/')}/v1" if ollama_url else None
+    out: dict = {
+        "native": not in_container(),
+        "reason": DOCKER_REASON if in_container() else None,
+        "scopes": SCOPE_INFO,
+        "meaning_search": bool(embed and is_loopback(embed)),  # build_args sends --no-embeddings otherwise
+        "connection": None,
+        "runtime": None,
+    }
+    if row is not None:
+        config = row.get("config") or {}
+        out["connection"] = {
+            "id": str(row["id"]), "enabled": row["enabled"], "server_path": config.get("server_path") or "",
+            "scopes": [s for s in SCOPES if s in (config.get("scopes") or ["passages"])],
+            "last_ok_at": row["last_ok_at"], "last_error": row["last_error"],
+        }
+        out["runtime"] = runtime(state, row, ollama_url)
+    return out
+
+
+def test(state, conn: psycopg.Connection, ollama_url: str | None) -> dict:
+    """Start (or restart) the server for the saved config, report how it went, and record the outcome on the row.
+
+    It clears an `incompatible_server` or cooling-down state, so it's also how the owner retries after a fix.
+    A paused connection can be tested; its client is closed again afterwards, since no chat will use it.
+    """
+    if in_container():
+        raise SetupError(f"It won't run here: {DOCKER_REASON}.")
+    row = connection(conn)
+    cfg = config_from(row, ollama_url)
+    if row is None or cfg is None:
+        raise SetupError("Save the server path first.")
+    sc = client(state, cfg)
+    if sc is None:
+        raise SetupError(f"It won't run here: {DOCKER_REASON}.")
+    status = sc.check()
+    if status["state"] == "running":
+        conn.execute("UPDATE connections SET last_ok_at = now(), last_error = NULL WHERE id = %s", (row["id"],))
+    else:
+        err = status.get("error") or {}
+        kind = err.get("kind") or "start_failed"
+        message = err.get("message") or REASONS.get(kind, "StarcallOS didn't start")
+        conn.execute("UPDATE connections SET last_error = %s WHERE id = %s", (f"{kind}: {message}"[:ERROR_MAX], row["id"]))
+    if not row["enabled"]:
+        close(state)
+    return status
 
 
 # ── one turn's lookup ──────────────────────────────────────────────────────────────────────────────────────────────

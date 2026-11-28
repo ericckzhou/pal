@@ -8,17 +8,21 @@ export type Conversation = {
   claude_context?: boolean; // a Claude chat also sends matching memories, documents and notes (opt-in)
   gmail?: boolean; // pal may search Gmail in this chat (local models only)
   gmail_connected?: boolean;
+  starcall?: boolean; // pal may search the StarcallOS library in this chat (off by default; Claude chats also need claude_context)
+  starcall_available?: boolean; // the StarcallOS connection is set up and on, on native Windows
   message_count?: number;
 };
 export const THINKING_LEVELS = ["off", "low", "medium", "high"] as const;
 export type ThinkingLevel = (typeof THINKING_LEVELS)[number];
 export type Source = {
   handle: string;
-  kind: "memory" | "document" | "conversation" | "note" | "project";
+  kind: "memory" | "document" | "conversation" | "note" | "project" | "starcall";
   id: string;
   title: string | null;
-  snippet: string;
+  snippet: string; // a StarcallOS item's text is shown during the reply only; once stored it's ""
   page: number | null;
+  page_end?: number | null;
+  starcall_kind?: "passage" | "concept";
   conversation_id: string | null;
   document_id: string | null;
   at: string | null;
@@ -47,6 +51,7 @@ export type RetrievalTrace = {
   fused: number;
   rerank: { status: "off" | "ran" | "fell_back" | "no_candidates"; pool?: number; kept?: number };
   candidates: TraceCandidate[];
+  starcall?: { status: "ok" | "failed"; ms: number | null; returned: number; mode_used: string | null; reason?: string };
 };
 export type Step = { kind: "retrieval" | "memory" | "proposal" | "command" | "notice"; label: string; detail: string | null };
 export type Usage = { prompt_tokens?: number | null; completion_tokens?: number | null };
@@ -107,6 +112,7 @@ export type StreamEvent =
   | { type: "proposal"; proposal: Proposal }
   | { type: "work_changed" }
   | { type: "model_changed"; model: string | null }
+  | { type: "starcall_changed"; starcall: boolean }
   | { type: "error"; message: string; unsent?: boolean };
 
 export type Project = {
@@ -173,6 +179,29 @@ export type ConnectionsReport = {
   client_command: string;
   services: ConnectableService[];
   signin: { ok: boolean; message: string } | null; // the last page sign-in's result, shown once
+  starcall: StarcallCard;
+};
+export type StarcallScope = "passages" | "concepts";
+export type StarcallError = { kind: string; message: string };
+export type StarcallRuntime = {
+  state: "running" | "stopped" | "cooldown" | "disabled" | "closed";
+  error: StarcallError | null;
+  retry_in?: number;
+};
+export type StarcallCard = {
+  native: boolean; // false in the Docker build, where StarcallOS can't run
+  reason: string | null;
+  scopes: { name: StarcallScope; label: string; what: string }[];
+  meaning_search: boolean; // pal's Ollama is on loopback, so the server can search by meaning too
+  connection: {
+    id: string;
+    enabled: boolean;
+    server_path: string;
+    scopes: StarcallScope[];
+    last_ok_at: string | null;
+    last_error: string | null;
+  } | null;
+  runtime: StarcallRuntime | null; // the running server process, when there is one for the saved settings
 };
 export type SyncResult = { status: "ok" | "failed" | "stopped" | "busy" | "skipped"; [k: string]: string | number };
 
@@ -501,7 +530,7 @@ export const api = {
   status: () => call<Status>("/api/status"),
   models: () => call<ModelList>("/api/models"),
   sessions: (q = "") => call<SessionRow[]>(`/api/sessions?q=${encodeURIComponent(q)}`),
-  patchConversation: (id: string, patch: { title?: string; model?: string | null; thinking?: ThinkingLevel | null; claude_context?: boolean; gmail?: boolean }) =>
+  patchConversation: (id: string, patch: { title?: string; model?: string | null; thinking?: ThinkingLevel | null; claude_context?: boolean; gmail?: boolean; starcall?: boolean }) =>
     call<Conversation>(`/api/conversations/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
   bulkDelete: (ids: string[]) =>
     call<{ removed: number }>("/api/conversations/bulk-delete", { method: "POST", body: JSON.stringify({ ids }) }),
@@ -525,6 +554,13 @@ export const api = {
     call<{ added: DriveFolder; folders: DriveFolder[] }>(`/api/connections/${id}/folders`, { method: "POST", body: JSON.stringify({ link }) }),
   removeDriveFolder: (id: string, folderId: string) =>
     call<{ folders: DriveFolder[] }>(`/api/connections/${id}/folders/${encodeURIComponent(folderId)}`, { method: "DELETE" }),
+  saveStarcall: (server_path: string, scopes: StarcallScope[]) =>
+    call<StarcallCard>("/api/connections/starcall", { method: "PUT", body: JSON.stringify({ server_path, scopes }) }),
+  pauseStarcall: (enabled: boolean) =>
+    call<StarcallCard>("/api/connections/starcall", { method: "PATCH", body: JSON.stringify({ enabled }) }),
+  testStarcall: () =>
+    call<{ ok: boolean; status: StarcallRuntime; card: StarcallCard }>("/api/connections/starcall/test", { method: "POST" }),
+  removeStarcall: () => call<StarcallCard>("/api/connections/starcall", { method: "DELETE" }),
   calendarFree: (day: string, start: string, end: string) =>
     call<FreeBusy>(`/api/calendar/free?${new URLSearchParams({ day, start, end })}`),
   calendarEvents: (days = 14) => call<{ connected: boolean; events: CalendarEvent[] }>(`/api/calendar/events?days=${days}`),

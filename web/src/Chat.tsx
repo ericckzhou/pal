@@ -82,6 +82,8 @@ export default function Chat({
   const [claudeContext, setClaudeContext] = useState(false);
   const [gmail, setGmail] = useState(true);
   const [gmailConnected, setGmailConnected] = useState(false);
+  const [starcall, setStarcall] = useState(false);
+  const [starcallAvailable, setStarcallAvailable] = useState(false);
   const idRef = useRef<string | null>(convId);
   const endRef = useRef<HTMLDivElement>(null);
 
@@ -103,12 +105,16 @@ export default function Chat({
         setClaudeContext(Boolean(c.claude_context));
         setGmail(c.gmail ?? true);
         setGmailConnected(Boolean(c.gmail_connected));
+        setStarcall(Boolean(c.starcall));
+        setStarcallAvailable(Boolean(c.starcall_available));
       }).catch(onAuthError);
     else {
       setModel(newChatModel);
       setThinking(null);
       setClaudeContext(false);
       setGmailConnected(false);
+      setStarcall(false);
+      setStarcallAvailable(false);
     }
   }, [convId, listVersion, newChatModel, onAuthError]);
 
@@ -172,6 +178,8 @@ export default function Chat({
           setProposals((ps) => [...ps, ev.proposal]);
         } else if (ev.type === "work_changed") {
           workChanged = true;
+        } else if (ev.type === "starcall_changed") {
+          setStarcall(ev.starcall);
         } else if (ev.type === "model_changed") {
           setModel(ev.model);
           onChanged(); // the rail's picker and list show the new model
@@ -257,6 +265,19 @@ export default function Chat({
     }
   };
 
+  const changeStarcall = async (on: boolean) => {
+    if (!idRef.current) return;
+    setError("");
+    setStarcall(on); // flip at once; put it back if the save fails
+    try {
+      await api.patchConversation(idRef.current, { starcall: on });
+    } catch (err) {
+      setStarcall(!on);
+      onAuthError(err);
+      setError("Could not change whether this chat searches StarcallOS.");
+    }
+  };
+
   const changeThinking = async (value: string) => {
     const level = (value || null) as ThinkingLevel | null;
     setThinking(level);
@@ -304,12 +325,28 @@ export default function Chat({
             Search Gmail
           </label>
         )}
+        {convId && starcallAvailable && (
+          <label
+            className={`chat-toggle${starcall && isClaude(model) && !claudeContext ? " needs" : ""}`}
+            title={
+              !isClaude(model)
+                ? "When on, pal searches your StarcallOS library on this PC and uses at most 2 of its items per reply. None of their text is stored."
+                : claudeContext
+                  ? "When on, matching StarcallOS passages are sent to Anthropic with your message (at most 2 per reply). None of their text is stored."
+                  : "A Claude chat also needs \"Share matching memories and documents with Claude\" on before StarcallOS is searched."
+            }
+          >
+            <input type="checkbox" checked={starcall} onChange={(e) => changeStarcall(e.target.checked)} />
+            Search StarcallOS
+            {starcall && isClaude(model) && !claudeContext && <span className="muted"> (needs sharing)</span>}
+          </label>
+        )}
       </div>
       {isClaude(model) && (
         <p className="cloud-banner small" role="status">
           <Icon name="bolt" size={14} /> <strong>{model}</strong>: this chat's messages are sent to Anthropic.{" "}
           {claudeContext
-            ? "Memories, documents and notes that match each message are sent too (listed under each reply)."
+            ? `Memories, documents${starcall && starcallAvailable ? ", StarcallOS passages" : ""} and notes that match each message are sent too (listed under each reply).`
             : "Memories, documents and notes are not."}
           {convId && (
             <label className="cloud-share">
