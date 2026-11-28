@@ -34,6 +34,8 @@ You use pal in a web browser, either on the PC itself or on your phone or laptop
 
 **Your devices.** Pair a phone or laptop with a one-time code, then sign in with a passkey instead of typing a password.
 
+**StarcallOS library (optional, Windows).** If you use [StarcallOS](https://github.com/ericckzhou/StarcallOS) on the same PC, a chat can also search its library and cite passages by page. It's off in every chat until you turn it on, and pal keeps none of the library's text. See [Connecting StarcallOS](#connecting-starcallos-optional-windows).
+
 ![The Projects page: project cards with open and overdue tasks](docs/screenshots/projects.png)
 
 ## Privacy and security
@@ -45,6 +47,7 @@ pal treats the PC it runs on as trusted, and everything else as untrusted.
   - **Claude chats.** If you save an Anthropic API key, you can pick a Claude model for a chat. Only that chat's messages are sent to Anthropic. Your memories, documents and notes are not sent, unless you tick "Share matching memories and documents with Claude" in that chat. Then only the items that match each message are sent, and they're listed under the reply.
   - **PDF reader setup.** `pal pdf-models` downloads the PDF reader's models once. After that, reading PDFs works offline.
   - The block covers pal itself, not other programs on your PC such as Ollama or Docker.
+- **StarcallOS runs as you.** If you connect StarcallOS, pal starts its server from the path you gave, as your Windows user, with no sandbox. It can read whatever you can, so only point pal at your own StarcallOS checkout. pal doesn't hand it pal's database login or settings. Library text is used for one reply and never saved, but the reply itself can quote it, and replies are kept.
 - **No passwords in files.** The database password and API keys are kept in Windows Credential Manager (with Docker, in a private folder outside the project). Your pal password is stored only as a secure hash.
 - **Protected against common web attacks.** pal checks where every request comes from and refuses anything unexpected.
 - **The AI can't act on its own.** Anything the AI produces (memories, tasks, reminders) waits for your approval. Text inside your documents is treated as content to read, never as instructions to follow.
@@ -183,6 +186,32 @@ On the Docker setup, use the helper script instead. The container can't open you
 bash scripts/pal-docker.sh google-client path/to/client.json
 bash scripts/pal-docker.sh connect calendar          # or drive, or gmail
 ```
+
+### Connecting StarcallOS (optional, Windows)
+
+[StarcallOS](https://github.com/ericckzhou/StarcallOS) turns your PDFs and notes into a study library. It ships a read-only MCP server. pal can start that server and search the library during a chat. It works on the native Windows setup only: the Docker build never starts it.
+
+1. In your StarcallOS checkout, build the server: `pnpm -C packages/mcp-server build`. It needs Node 22.13 or newer on `PATH`.
+2. Open StarcallOS once after each update, so its database is current. The server refuses a database that's older or newer than itself.
+3. On pal's **Connections** page, under **On this PC**, paste the full path to `packages\mcp-server\dist\index.js` (Explorer's **Copy as path** is fine), choose what pal may search, and press **Save**, then **Test**. Saving a path works only in a browser on the PC, because pal runs that file.
+4. In a chat, tick **Search StarcallOS** above the messages, or type `/starcall on`.
+
+What pal may search:
+
+- **Passages** (always on): the indexed text of your StarcallOS sources. pal asks for 6 on each message in a chat that allows it, keeps the ones its double-check accepts, and uses at most 2 in the reply.
+- **Concepts** (optional): a concept's name and definition, used only when the concept's whole name is in your question.
+
+pal never asks for your StarcallOS highlights, notes or study progress. If pal's Ollama is on `127.0.0.1`, StarcallOS can search by meaning as well as by keyword; otherwise it searches by keyword only.
+
+How it behaves:
+
+- **Off by default, per chat.** A new chat never searches StarcallOS. `/starcall` shows whether this chat does.
+- **Claude chats need both switches.** Search StarcallOS *and* "Share matching memories and documents with Claude" must be on. Then the matching passages are sent to Anthropic with your message.
+- **Nothing copied.** Passages are shown while the reply is written. What pal saves with the reply is the citation: the source title and page, without the passage text. "Why these sources?" shows the same. The reply is the model's own words and can still quote a passage.
+- **Never in the way.** If StarcallOS is slow, busy or broken, the reply goes ahead with pal's own sources and a "StarcallOS skipped" note says why. After repeated failures pal waits before starting it again; **Test** retries at once.
+- **Treated as content.** Text from your library is information for the model, never instructions to follow.
+
+The card shows the last success and any error. **Pause** stops the server and stops every chat from searching. **Remove** forgets the path; nothing in StarcallOS changes.
 
 ### Running with Docker (Linux and Mac)
 
